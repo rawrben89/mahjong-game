@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: hk-mahjong
+    runtime: node
+    plan: free
+    buildCommand: npm install --omit=dev
+    startCommand: node server.js

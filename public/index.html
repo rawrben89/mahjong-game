@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#1a1033">
+<title>雀 HK Mahjong</title>
+<link rel="icon" type="image/svg+xml" href="/assets/tiles/d1.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;900&display=swap" rel="stylesheet">
+<script src="/assets/vendor/phaser.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;height:100dvh;overflow:hidden;overscroll-behavior:none;background:linear-gradient(160deg,#1a1033 0%,#2d1b4e 55%,#170d2e 100%);font-family:'M PLUS Rounded 1c','Segoe UI',system-ui,sans-serif;color:#fff}
+
+.deco-tiles{display:flex;justify-content:center;gap:5px;margin:2px 0 4px}
+.deco-tiles img{width:34px;height:41px;filter:drop-shadow(0 3px 4px rgba(0,0,0,.4))}
+
+/* ── Pre-game screens ──────────────────────────────────────────────────── */
+.screen{display:none;position:fixed;top:0;left:0;right:0;height:100vh;height:100dvh;z-index:20;overflow-y:auto}
+.screen.active{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:20px}
+#gameScreen.active{display:flex;flex-direction:row;padding:0;gap:0;overflow:hidden}
+
+.card{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:16px;padding:28px;width:min(420px,94vw);display:flex;flex-direction:column;gap:12px}
+.card h1{font-size:2rem;text-align:center}
+.card h2{font-size:1.4rem;text-align:center}
+.card h3{font-size:.85rem;opacity:.6;margin-top:4px}
+
+input{padding:11px 15px;border-radius:8px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.07);color:#fff;font-size:.95rem;outline:none;width:100%}
+input::placeholder{opacity:.38}
+input:focus{border-color:#ff9ecd}
+
+button{padding:11px 18px;border-radius:10px;border:1px solid rgba(255,255,255,.25);background:linear-gradient(135deg,#ff8fc7,#c98fff);color:#fff;font-family:inherit;font-weight:800;font-size:.9rem;letter-spacing:.3px;cursor:pointer;transition:all .14s;width:100%;box-shadow:0 3px 12px rgba(255,143,199,.25);text-shadow:0 1px 2px rgba(0,0,0,.25)}
+button:hover{filter:brightness(1.12);transform:translateY(-1px);box-shadow:0 5px 16px rgba(255,143,199,.4)}
+button:active{transform:none}
+button.sec{background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.15);box-shadow:none;text-shadow:none}
+button.sec:hover{background:rgba(255,255,255,.18);box-shadow:none}
+button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba(231,76,60,.3)}
+
+.sep{height:1px;background:rgba(255,255,255,.12);margin:2px 0}
+.err{color:#e74c3c;font-size:.82rem;text-align:center;min-height:16px}
+.inf{color:#ff9ecd;font-size:.82rem;text-align:center}
+
+.pchip{background:rgba(255,255,255,.09);border-radius:8px;padding:8px 12px;display:flex;align-items:center;gap:8px;font-size:.88rem}
+.bot-badge{font-size:.65rem;background:#e67e22;color:#fff;border-radius:3px;padding:1px 5px}
+.room-row{background:rgba(255,255,255,.06);border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:background .14s}
+.room-row:hover{background:rgba(255,255,255,.13)}
+.room-row button{width:auto;padding:5px 12px;font-size:.8rem}
+
+/* ── Game screen layout ────────────────────────────────────────────────── */
+#gameArea{flex:1;min-width:0;position:relative;overflow:hidden;display:flex;flex-direction:column}
+#phaserMount{flex:1;min-height:0;overflow:hidden}
+#phaserMount canvas{display:block}
+
+/* Action overlay sits at bottom of game area */
+#actionOverlay{
+  position:absolute;bottom:0;left:0;right:0;
+  display:flex;align-items:center;justify-content:center;flex-wrap:wrap;
+  gap:7px;padding:6px 10px;min-height:52px;
+  background:linear-gradient(transparent,rgba(0,0,0,.55));
+  pointer-events:none;z-index:10
+}
+#actionOverlay .abtn{
+  padding:10px 22px;border-radius:24px;font-weight:800;font-size:.92rem;
+  letter-spacing:.6px;cursor:pointer;border:1.5px solid rgba(255,255,255,.35);
+  transition:all .14s;pointer-events:all;flex-shrink:0;color:#fff;
+  text-shadow:0 1px 2px rgba(0,0,0,.35);box-shadow:0 3px 10px rgba(0,0,0,.45)
+}
+#actionOverlay .abtn:hover{filter:brightness(1.18);transform:translateY(-2px)}
+.abtn.win  {background:linear-gradient(135deg,#ff4d6d,#c0392b);box-shadow:0 0 18px rgba(255,77,109,.55);animation:pulse 1s infinite}
+.abtn.pong {background:linear-gradient(135deg,#b06ab3,#8e44ad)}
+.abtn.kong {background:linear-gradient(135deg,#f5a623,#d35400)}
+.abtn.chow {background:linear-gradient(135deg,#42c97a,#27ae60)}
+.abtn.pass {background:rgba(255,255,255,.13);border-color:rgba(255,255,255,.22);box-shadow:none}
+.abtn.hint {background:transparent;border-color:rgba(255,255,255,.18);color:rgba(255,255,255,.45);font-size:.78rem;padding:5px 12px;pointer-events:none;text-shadow:none;box-shadow:none}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,77,109,.7)}50%{box-shadow:0 0 0 9px rgba(255,77,109,0)}}
+
+/* ── Chat panel ────────────────────────────────────────────────────────── */
+.chat-panel{width:260px;flex-shrink:0;display:flex;flex-direction:column;background:rgba(0,0,0,.4);border-left:1px solid rgba(255,255,255,.07);overflow:hidden;transition:width .2s}
+.chat-panel.collapsed{width:0}
+.chat-header{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0}
+.chat-header span{font-weight:700;font-size:.88rem}
+.chat-toggle-btn{background:rgba(255,255,255,.1);border:none;color:#fff;border-radius:6px;padding:3px 8px;cursor:pointer;font-size:.82rem}
+.chat-msgs{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:7px}
+.chat-msg{display:flex;flex-direction:column;gap:2px}
+.chat-msg .from{font-size:.7rem;font-weight:700;color:#ff9ecd;opacity:.85}
+.chat-msg.me .from{color:#f39c12;text-align:right}
+.chat-msg .text{background:rgba(255,255,255,.1);border-radius:10px;border-bottom-left-radius:3px;padding:5px 9px;font-size:.83rem;line-height:1.4;word-break:break-word}
+.chat-msg.me .text{background:rgba(255,158,205,.18);text-align:right;border-bottom-left-radius:10px;border-bottom-right-radius:3px}
+.chat-msg.system .text{background:rgba(241,196,15,.1);color:#f1c40f;font-style:italic;font-size:.76rem;text-align:center;border-radius:8px}
+.chat-input-row{display:flex;gap:6px;padding:7px 9px;border-top:1px solid rgba(255,255,255,.07);flex-shrink:0}
+.chat-input-row input{flex:1;padding:7px 11px;font-size:.86rem;border-radius:18px}
+.chat-input-row button{padding:7px 13px;border-radius:18px;font-size:.82rem;flex-shrink:0;width:auto}
+
+/* Floating chat button */
+.chat-float-btn{position:fixed;bottom:14px;right:14px;z-index:50;background:#ff9ecd;color:#2a1040;border:none;border-radius:50%;width:44px;height:44px;font-size:1.2rem;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;transition:transform .14s}
+.chat-float-btn:hover{transform:scale(1.1)}
+.chat-unread{position:absolute;top:-2px;right:-2px;background:#e74c3c;color:#fff;font-size:.62rem;font-weight:700;border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center}
+
+/* ── Chow picker ────────────────────────────────────────────────────────── */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:200}
+.chowpick{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#1a1033;border:2px solid #27ae60;border-radius:16px;padding:22px;z-index:201;display:flex;flex-direction:column;gap:12px;align-items:center;min-width:240px}
+.chowpick h3{color:#27ae60;font-size:1.05rem}
+.chowopt{display:flex;gap:3px;cursor:pointer;padding:8px;border-radius:8px;border:2px solid transparent;transition:border-color .14s}
+.chowopt:hover{border-color:#27ae60}
+
+/* ── Win overlay ────────────────────────────────────────────────────────── */
+#winScreen{position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:300;display:none;align-items:center;justify-content:center;overflow:hidden}
+.win-tile,.win-hand>div{animation:tilein .4s cubic-bezier(.34,1.56,.64,1) backwards}
+@keyframes tilein{from{transform:translateY(16px) scale(.55);opacity:0}}
+.confetti{position:absolute;top:-16px;width:9px;height:14px;border-radius:2px;animation:confall linear forwards;pointer-events:none;z-index:301}
+@keyframes confall{to{transform:translateY(108vh) rotate(740deg);opacity:.65}}
+.wincard{background:#1a1033;border:2px solid #f1c40f;border-radius:20px;padding:28px;max-width:500px;width:92vw;text-align:center;display:flex;flex-direction:column;gap:13px;max-height:90vh;overflow-y:auto}
+.wincard h2{font-size:1.9rem;color:#f1c40f}
+.win-hand{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;padding:4px 0}
+.win-tile{display:inline-flex;align-items:center;justify-content:center;width:38px;height:46px;background:#fffef2;border-radius:5px;font-size:22px;color:#111;overflow:hidden;position:relative;border-bottom:3px solid #cfc8ab;box-shadow:0 4px 9px rgba(0,0,0,.55),0 1px 2px rgba(0,0,0,.4)}
+.win-tile img{width:100%;height:100%;display:block}
+.win-tile::after{content:'';position:absolute;inset:0;border-radius:5px;background:linear-gradient(180deg,rgba(255,255,255,.35),rgba(255,255,255,0) 30%);pointer-events:none}
+.win-tile.back{background:linear-gradient(180deg,#1a9a50 0%,#0e7a30 60%,#0a5a24 100%);border-bottom:3px solid #e9e2c8}
+.chow-tile{display:inline-flex;width:38px;height:46px;border-radius:5px;overflow:hidden;position:relative;border-bottom:3px solid #cfc8ab;box-shadow:0 4px 9px rgba(0,0,0,.55)}
+.chow-tile img{width:100%;height:100%;display:block}
+.chow-tile::after{content:'';position:absolute;inset:0;border-radius:5px;background:linear-gradient(180deg,rgba(255,255,255,.35),rgba(255,255,255,0) 30%);pointer-events:none}
+.chow-tile.target{outline:2.5px solid #ffd700;outline-offset:-2.5px}
+.stbl{width:100%;border-collapse:collapse;font-size:.88rem}
+.stbl td{padding:5px 10px;border-bottom:1px solid rgba(255,255,255,.07)}
+.stbl td:last-child{text-align:right;font-weight:700;color:#ff9ecd}
+.stbl .winner-row td{color:#f1c40f}
+.score-detail{font-size:.78rem;opacity:.65;margin-top:-6px;text-align:center}
+.btn-row{display:flex;gap:8px}
+.btn-row button{flex:1}
+
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:rgba(255,255,255,.02)}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,.18);border-radius:2px}
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+@media(max-width:850px){
+  .chat-panel{display:none}
+  .chat-float-btn{display:flex}
+  .chat-panel.mobile-open{display:flex;position:fixed;right:0;top:0;bottom:0;width:270px;z-index:80}
+}
+@media(max-width:480px){
+  .card{padding:20px}
+  .card h1{font-size:1.7rem}
+}
+</style>
+</head>
+<body>
+
+<!-- ── Name ───────────────────────────────────────────────────────────────── -->
+<div id="nameScreen" class="screen active">
+  <div class="card">
+    <h1>🌸 雀 HK Mahjong</h1>
+    <div class="deco-tiles">
+      <img src="/assets/tiles/f1.svg" alt=""><img src="/assets/tiles/d1.svg" alt=""><img src="/assets/tiles/w5.svg" alt=""><img src="/assets/tiles/s1.svg" alt=""><img src="/assets/tiles/t5.svg" alt=""><img src="/assets/tiles/d2.svg" alt=""><img src="/assets/tiles/h5.svg" alt="">
+    </div>
+    <p style="text-align:center;opacity:.55;font-size:.88rem">麻雀 · Multiplayer · Bots · Hong Kong Rules</p>
+    <div class="sep"></div>
+    <input id="nameIn" placeholder="Your name" maxlength="20" autofocus autocomplete="off">
+    <div id="nameErr" class="err"></div>
+    <button onclick="submitName()">Continue →</button>
+  </div>
+</div>
+
+<!-- ── Lobby ──────────────────────────────────────────────────────────────── -->
+<div id="lobbyScreen" class="screen">
+  <div class="card">
+    <h1>🌸 雀 Mahjong</h1>
+    <div style="text-align:center;opacity:.65;font-size:.88rem">Hello, <span id="myNameDisp" style="color:#ff9ecd;font-weight:700"></span>!</div>
+    <div class="sep"></div>
+    <button onclick="createRoom()">🏠 Create New Room</button>
+    <div class="sep"></div>
+    <h3>Join by Code</h3>
+    <div style="display:flex;gap:8px">
+      <input id="codeIn" placeholder="Room code" style="text-transform:uppercase;letter-spacing:2px;flex:1">
+      <button onclick="joinCode()" style="width:auto;padding:11px 16px">Join</button>
+    </div>
+    <div class="sep"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h3>Open Rooms</h3>
+      <button class="sec" style="width:auto;padding:4px 10px;font-size:.78rem" onclick="refreshRooms()">↻ Refresh</button>
+    </div>
+    <div id="roomListEl" style="display:flex;flex-direction:column;gap:5px;max-height:200px;overflow-y:auto"></div>
+    <div id="lobbyErr" class="err"></div>
+  </div>
+</div>
+
+<!-- ── Waiting room ───────────────────────────────────────────────────────── -->
+<div id="waitingScreen" class="screen">
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap">
+      <h2>Room <span id="roomCodeDisp" style="color:#ff9ecd;letter-spacing:4px;font-family:monospace;font-size:1.4rem"></span></h2>
+      <button id="copyCodeBtn" onclick="copyCode()" style="width:auto;padding:5px 13px;font-size:.78rem;background:rgba(255,158,205,.15);border:1px solid rgba(255,158,205,.35);color:#ff9ecd">Copy Code</button>
+    </div>
+    <div class="inf">Share this code with friends on your network!</div>
+    <div class="sep"></div>
+    <h3>Players (<span id="pcountDisp">1</span>/4)</h3>
+    <div id="waitPlayers" style="display:flex;flex-direction:column;gap:6px"></div>
+    <div class="sep"></div>
+    <div id="handInfo" style="font-size:.78rem;opacity:.55;text-align:center"></div>
+    <div style="font-size:.78rem;opacity:.55;text-align:center">Empty seats fill with bots when host starts.</div>
+    <button id="startBtn" onclick="startGame()" style="margin-top:4px">▶ Start Game (fill with bots)</button>
+    <button class="sec" onclick="leaveRoom()">← Leave Room</button>
+    <div id="waitErr" class="err"></div>
+  </div>
+</div>
+
+<!-- ── Game screen ────────────────────────────────────────────────────────── -->
+<div id="gameScreen" class="screen">
+  <div id="gameArea">
+    <div id="phaserMount"></div>
+    <div id="actionOverlay"></div>
+  </div>
+  <div class="chat-panel" id="chatPanel">
+    <div class="chat-header">
+      <span>💬 Chat</span>
+      <button class="chat-toggle-btn" onclick="toggleChat()">✕</button>
+    </div>
+    <div class="chat-msgs" id="chatMsgs"></div>
+    <div class="chat-input-row">
+      <input id="chatIn" placeholder="Say something…" maxlength="200" autocomplete="off">
+      <button onclick="sendChat()">➤</button>
+    </div>
+  </div>
+</div>
+
+<!-- Floating chat (mobile) -->
+<button class="chat-float-btn" id="chatFloatBtn" onclick="openMobileChat()">
+  💬<span class="chat-unread" id="chatUnread" style="display:none">0</span>
+</button>
+
+<!-- ── Chow picker ────────────────────────────────────────────────────────── -->
+<div id="chowOvl" style="display:none">
+  <div class="overlay" onclick="cancelChow()"></div>
+  <div class="chowpick">
+    <h3>Choose your Chow</h3>
+    <p style="opacity:.6;font-size:.82rem">Select which pair to use from hand:</p>
+    <div id="chowOpts" style="display:flex;flex-direction:column;gap:6px"></div>
+    <button class="sec" onclick="cancelChow()" style="width:auto;padding:7px 16px">Cancel</button>
+  </div>
+</div>
+
+<!-- ── Win screen ─────────────────────────────────────────────────────────── -->
+<div id="winScreen">
+  <div class="wincard">
+    <div id="winIco" style="font-size:3.5rem"></div>
+    <h2 id="winMsg"></h2>
+    <div id="winSub" style="opacity:.7;font-size:.88rem"></div>
+    <div id="winHand" class="win-hand"></div>
+    <div id="scoreDetail" class="score-detail"></div>
+    <div class="sep"></div>
+    <table class="stbl" id="stbl"></table>
+    <div class="btn-row" style="margin-top:4px">
+      <button onclick="requestNewGame()">🔄 New Game</button>
+      <button class="sec" onclick="leaveRoom()">🚪 Leave</button>
+    </div>
+  </div>
+</div>
+
+<script src="/client.js"></script>
+</body>
+</html>

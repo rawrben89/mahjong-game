@@ -1,0 +1,20 @@
+{
+  "name": "hk-mahjong",
+  "version": "1.0.0",
+  "description": "Hong Kong Mahjong multiplayer game",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "deploy": "wrangler deploy"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.60.0"
+  }
+}
