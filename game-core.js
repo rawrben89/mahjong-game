@@ -934,6 +934,28 @@ function handleMsg(ws, player, msg) {
     return;
   }
 
+  // ─── Room actions that work with or without a running game ────────────────
+  if (type === 'chat') {
+    const room = rooms.get(player.roomId);
+    if (!room) return;
+    const text = (msg.text || '').trim().slice(0, 200);
+    if (!text) return;
+    broadcastRoom(room, { type: 'chat', from: player.name, pid: player.id, text, ts: Date.now() });
+    return;
+  }
+
+  if (type === 'leaveRoom') {
+    const room3 = rooms.get(player.roomId);
+    if (room3) {
+      room3.players = room3.players.filter(p => p.id !== player.id);
+      if (room3.players.length === 0 || room3.players.every(p => !p.ws)) rooms.delete(player.roomId);
+      else broadcastRoom(room3, { type: 'playerLeft', id: player.id, name: player.name, players: room3.players.map(p => ({ id: p.id, name: p.name })) });
+    }
+    player.roomId = null;
+    send(ws, { type: 'leftRoom' });
+    return;
+  }
+
   // ─── In-game actions ──────────────────────────────────────────────────────
   const room = rooms.get(player.roomId);
   if (!room?.game) return;
@@ -988,26 +1010,6 @@ function handleMsg(ws, player, msg) {
     return;
   }
 
-  if (type === 'chat') {
-    const room = rooms.get(player.roomId);
-    if (!room) return;
-    const text = (msg.text || '').trim().slice(0, 200);
-    if (!text) return;
-    broadcastRoom(room, { type: 'chat', from: player.name, pid: player.id, text, ts: Date.now() });
-    return;
-  }
-
-  if (type === 'leaveRoom') {
-    const room3 = rooms.get(player.roomId);
-    if (room3) {
-      room3.players = room3.players.filter(p => p.id !== player.id);
-      if (room3.players.length === 0 || room3.players.every(p => !p.ws)) rooms.delete(player.roomId);
-      else broadcastRoom(room3, { type: 'playerLeft', id: player.id, name: player.name, players: room3.players.map(p => ({ id: p.id, name: p.name })) });
-    }
-    player.roomId = null;
-    send(ws, { type: 'leftRoom' });
-    return;
-  }
 }
 
 // Exported for tests

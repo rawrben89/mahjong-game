@@ -153,7 +153,32 @@ function detectEvents(prev, curr) {
 }
 
 // ─── WebSocket ────────────────────────────────────────────────────────────────
+// Static hosts (GitHub Pages) have no WebSocket server: run the game engine
+// in-browser instead — fully playable solo vs bots. Multiplayer still uses the
+// real server on Node/Cloudflare.
+const LOCAL_MODE = location.hostname.endsWith('github.io') || location.protocol === 'file:' || /[?&]local=1/.test(location.search);
+if (LOCAL_MODE) {
+  const s = document.createElement('script');
+  s.type = 'module'; s.src = 'local-core.js';
+  document.head.appendChild(s);
+}
+
+// In LOCAL_MODE, `ws` is a shim that pipes messages straight into the engine
+// running in this same browser tab (no network).
+function connectLocal() {
+  if (!window.__localCore) { setTimeout(connectLocal, 80); return; }
+  const core = window.__localCore;
+  const serverSide = { readyState: 1, send: s => { const m = JSON.parse(s); setTimeout(() => onMsg(m), 0); } };
+  ws = { readyState: 1, send: s => core.handleRaw(serverSide, s), close() {} };
+  core.attachPlayer(serverSide);
+  const saved = sessionStorage.getItem('mjSession');
+  if (saved) { try { const sx = JSON.parse(saved); if (sx.name) tx({ type: 'setName', name: sx.name }); } catch {} }
+  // Hint that this is the offline solo build
+  document.querySelectorAll('.local-only').forEach(el => el.style.display = 'block');
+}
+
 function connect() {
+  if (LOCAL_MODE) { connectLocal(); return; }
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   // /ws path: Node server accepts any path; on Cloudflare Workers a non-asset
   // path is needed so the upgrade reaches the Durable Object.
@@ -293,7 +318,7 @@ function updWait(players) {
   document.getElementById('pcountDisp').textContent=players.length;
   const slots=[...players]; while(slots.length<4) slots.push(null);
   document.getElementById('waitPlayers').innerHTML=slots.map((p,i)=>{
-    const windImg=`<img src="/assets/tiles/f${i+1}.svg" style="width:22px;height:27px" alt="${WL[WINDS_ARR[i]]}">`;
+    const windImg=`<img src="assets/tiles/f${i+1}.svg" style="width:22px;height:27px" alt="${WL[WINDS_ARR[i]]}">`;
     if(!p) return `<div class="pchip" style="opacity:.32">${windImg}<span style="flex:1">Empty <span class="bot-badge">Bot</span></span><span style="opacity:.5;font-size:.78rem">${WL[WINDS_ARR[i]]}</span></div>`;
     return `<div class="pchip">${windImg}<span style="flex:1">${esc(p.name)}${p.id===myId?' (You)':''}</span><span style="opacity:.5;font-size:.78rem">${WL[WINDS_ARR[i]]}</span></div>`;
   }).join('');
@@ -301,7 +326,74 @@ function updWait(players) {
   document.getElementById('startBtn').style.display=isHost?'block':'none';
 }
 function startGame() { tx({type:'startGame',withBots:true}); }
-function leaveRoom() { tx({type:'leaveRoom'}); document.getElementById('winScreen').style.display='none'; destroyPhaser(); }
+// ─── Rules / Fan Table (mirrors computeFan in game-core.js, sourced from
+//     rawrben89/mahjong-scoreboard) ───────────────────────────────────────────
+const RULES = [
+  ['Win Method', [
+    ['自摸','Self Draw — draw your own winning tile','+1'],
+    ['門清','Concealed Hand — win by discard, no called melds','+1'],
+    ['槓上花','Win by Kong — win on the supplement tile after a kong','+2'],
+    ['槓上槓','Double Kong — supplement tile of a 2nd straight kong','+9'],
+    ['海底撈月','Last Tile — win on the final tile of the wall','+1'],
+    ['搶槓','Robbing the Kong — steal an added kong tile','+1'],
+    ['天糊','Heavenly Hand — dealer wins on the opening draw','+13'],
+    ['地糊','Earthly Hand — non-dealer wins on dealer\'s first discard','+13'],
+  ]],
+  ['Hand Pattern', [
+    ['平糊','Peace Hand — all four melds are sequences','+1'],
+    ['碰碰糊','All Triplets — every meld a pung/kong','+3'],
+    ['混一色','Mixed One Suit — one suit + honor tiles','+3'],
+    ['清一色','Pure Suit — one suit, no honors','+7'],
+    ['七對子','Seven Pairs — seven distinct pairs','+4'],
+  ]],
+  ['Honor Pungs', [
+    ['中 / 發 / 白','Dragon pung — each dragon triplet','+1'],
+    ['自風刻','Seat Wind pung — your own seat wind','+1'],
+    ['圈風刻','Round Wind pung — the prevailing wind','+1'],
+  ]],
+  ['Dragons & Winds', [
+    ['小三元','Small Three Dragons — 2 dragon pungs + pair','+5'],
+    ['大三元','Big Three Dragons — all 3 dragon pungs','+8'],
+    ['小四喜','Small Four Winds — 3 wind pungs + pair','+6'],
+    ['大四喜','Big Four Winds — all 4 wind pungs','+13'],
+  ]],
+  ['Special Hands', [
+    ['混么九','Terminals & Honors — every set a terminal/honor','+10'],
+    ['字一色','All Honors — only winds & dragons','+10'],
+    ['九蓮寶燈','Nine Gates — 1112345678999 of one suit','+10'],
+    ['綠一色','All Green — only 2/3/4/6/8 bamboo + green dragon','+10'],
+    ['藍一色','All Blue — all circles + white dragon','+10'],
+    ['紅一色','All Red — all characters + red dragon','+10'],
+    ['十三幺','Thirteen Orphans — one of each terminal & honor','+13'],
+    ['十八羅漢','Eighteen Arhats — four kongs','+13'],
+  ]],
+  ['Bonus Tiles', [
+    ['花牌','Each flower / season tile drawn','+1'],
+    ['槓','Each declared kong','+1'],
+  ]],
+];
+function showRules() {
+  const body=document.getElementById('rulesBody');
+  let h=`<div class="rules-note">🀄 <b>Minimum 3 fan</b> to declare a win — a hand worth less cannot win.</div>
+    <div class="rules-note">💰 <b>Self-draw:</b> all three opponents pay you. <b>By discard:</b> the discarder pays for everyone. If the <b>dealer (East)</b> wins or pays, that payment is <b>doubled</b>.</div>`;
+  RULES.forEach(([cat,rows])=>{
+    h+=`<div class="rules-cat">${cat}</div>`;
+    rows.forEach(([zh,en,fan])=>{
+      h+=`<div class="fan-row"><span class="zh">${zh}</span><span class="en">${en}</span><span class="fan">${fan}</span></div>`;
+    });
+  });
+  body.innerHTML=h;
+  document.getElementById('rulesOvl').style.display='block';
+}
+function hideRules() { document.getElementById('rulesOvl').style.display='none'; }
+
+function confirmLeave() { document.getElementById('leaveOvl').style.display='block'; }
+function cancelLeave() { document.getElementById('leaveOvl').style.display='none'; }
+function leaveRoom() {
+  document.getElementById('leaveOvl').style.display='none';
+  document.getElementById('winScreen').style.display='none';
+  tx({type:'leaveRoom'}); destroyPhaser();
+}
 function copyCode() {
   const code=document.getElementById('roomCodeDisp').textContent;
   navigator.clipboard.writeText(code).then(()=>{
