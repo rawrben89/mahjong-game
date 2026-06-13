@@ -172,6 +172,19 @@ function whenLocalReady(cb, n=0) {
 }
 function randCode(len=4){ const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s=''; for(let i=0;i<len;i++) s+=A[Math.floor(Math.random()*A.length)]; return s; }
 
+// WebRTC ICE config. STUN lets peers discover each other on friendly networks;
+// TURN relays traffic when both sides are behind strict NATs (different
+// networks / mobile data). Override window.MJ_TURN to supply your own TURN
+// server for reliable cross-network play.
+const PEER_OPTS = { config: { iceServers: (window.MJ_TURN ? [window.MJ_TURN] : []).concat([
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+]) } };
+
 // ── LOCAL_MODE host: this browser runs the authoritative engine; friends
 //    connect over WebRTC. Solo = hosting with no peers (bots fill seats). ──
 function hostOnline() {
@@ -182,7 +195,7 @@ function hostOnline() {
     const hostServer = { readyState:1, send: s => { try { onMsg(JSON.parse(s)); } catch {} } };
     ws = { readyState:1, send: s => core.handleRaw(hostServer, s), close(){} };
     core.attachPlayer(hostServer);
-    peerObj = new window.Peer(PEER_PREFIX + shareCode);
+    peerObj = new window.Peer(PEER_PREFIX + shareCode, PEER_OPTS);
     peerObj.on('connection', conn => hostAcceptPeer(core, conn));
     peerObj.on('error', e => { if (e.type==='unavailable-id') { peerObj.destroy(); hostOnline(); } else console.warn('peer', e.type); });
     peerObj.on('open', () => { tx({type:'setName', name:myName}); tx({type:'createRoom'}); });
@@ -205,7 +218,7 @@ function joinOnline(code) {
   if (!code) { showErr('Enter a room code'); return; }
   whenLocalReady(() => {
     shareCode = code; netRole = 'peer';
-    peerObj = new window.Peer();
+    peerObj = new window.Peer(PEER_OPTS);
     peerObj.on('open', () => {
       const conn = peerObj.connect(PEER_PREFIX + code, { reliable:true });
       const timer = setTimeout(() => { if (!ws) showErr('No host found for code ' + code); }, 9000);
