@@ -342,8 +342,29 @@ function onMsg(m) {
   }
 }
 
+// ─── Decorative petals on the menus ───────────────────────────────────────────
+(function makePetals(){
+  const el=document.getElementById('petals'); if(!el) return;
+  for(let i=0;i<16;i++){
+    const p=document.createElement('i');
+    p.style.left=Math.random()*100+'%';
+    p.style.animationDuration=(7+Math.random()*8)+'s';
+    p.style.animationDelay=(-Math.random()*12)+'s';
+    p.style.transform=`scale(${0.6+Math.random()*0.9})`;
+    p.style.opacity=0.25+Math.random()*0.35;
+    el.appendChild(p);
+  }
+})();
+
 // ─── Screens ──────────────────────────────────────────────────────────────────
-function showSc(id) { document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); document.getElementById(id).classList.add('active'); }
+function showSc(id) {
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  // Petals decorate the menus only — hide them once the game board is up
+  const pet=document.getElementById('petals'); if(pet) pet.style.display = (id==='gameScreen')?'none':'block';
+  // The mobile chat button belongs to the game only (CSS decides flex/none)
+  const fab=document.getElementById('chatFloatBtn'); if(fab) fab.style.display = (id==='gameScreen')?'':'none';
+}
 function showErr(msg) { const el=document.querySelector('.screen.active .err'); if(el){el.textContent=msg; setTimeout(()=>{if(el)el.textContent='';},4000);} }
 
 // ─── Name ─────────────────────────────────────────────────────────────────────
@@ -1261,5 +1282,6 @@ class GameScene extends Phaser.Scene {
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
+{ const fab=document.getElementById('chatFloatBtn'); if(fab) fab.style.display='none'; } // game-only
 connect();
 setInterval(()=>{ if(document.getElementById('lobbyScreen').classList.contains('active')) refreshRooms(); },12000);

@@ -14,18 +14,28 @@
 <script src="assets/vendor/phaser.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{width:100%;height:100%;height:100dvh;overflow:hidden;overscroll-behavior:none;background:linear-gradient(160deg,#1a1033 0%,#2d1b4e 55%,#170d2e 100%);font-family:'M PLUS Rounded 1c','Segoe UI',system-ui,sans-serif;color:#fff}
+html,body{width:100%;height:100%;height:100dvh;overflow:hidden;overscroll-behavior:none;background:radial-gradient(120% 90% at 50% -10%, #3a1f63 0%, #251247 45%, #150b2b 100%);font-family:'M PLUS Rounded 1c','Segoe UI',system-ui,sans-serif;color:#fff;-webkit-tap-highlight-color:transparent}
 
 .deco-tiles{display:flex;justify-content:center;gap:5px;margin:2px 0 4px}
-.deco-tiles img{width:34px;height:41px;filter:drop-shadow(0 3px 4px rgba(0,0,0,.4))}
+.deco-tiles img{width:34px;height:41px;filter:drop-shadow(0 3px 5px rgba(0,0,0,.45));animation:tilefloat 3.5s ease-in-out infinite}
+.deco-tiles img:nth-child(2n){animation-delay:.5s}
+.deco-tiles img:nth-child(3n){animation-delay:1s}
+@keyframes tilefloat{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-5px) rotate(1deg)}}
+
+/* Decorative sakura petals behind the menus */
+#petals{position:fixed;inset:0;z-index:1;pointer-events:none;overflow:hidden}
+#petals i{position:absolute;top:-24px;width:13px;height:13px;background:radial-gradient(circle at 30% 30%,#ffd1e6,#ff9ecd);border-radius:60% 0 60% 0;opacity:.5;animation:petalfall linear infinite}
+@keyframes petalfall{0%{transform:translateY(-24px) rotate(0)}100%{transform:translateY(102vh) rotate(540deg)}}
 
 /* ── Pre-game screens ──────────────────────────────────────────────────── */
 .screen{display:none;position:fixed;top:0;left:0;right:0;height:100vh;height:100dvh;z-index:20;overflow-y:auto}
 .screen.active{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:20px}
 #gameScreen.active{display:flex;flex-direction:row;padding:0;gap:0;overflow:hidden}
 
-.card{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:16px;padding:28px;width:min(420px,94vw);display:flex;flex-direction:column;gap:12px}
-.card h1{font-size:2rem;text-align:center}
+.card{position:relative;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.045));border:1px solid rgba(255,255,255,.15);border-radius:20px;padding:28px;width:min(420px,94vw);display:flex;flex-direction:column;gap:12px;box-shadow:0 24px 60px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.12);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);animation:cardin .45s cubic-bezier(.2,.9,.3,1.2) both}
+.card::before{content:'';position:absolute;top:0;left:18%;right:18%;height:2px;background:linear-gradient(90deg,transparent,#ff9ecd,#c98fff,transparent);border-radius:2px}
+@keyframes cardin{from{opacity:0;transform:translateY(14px) scale(.97)}}
+.card h1{font-size:2.1rem;text-align:center;background:linear-gradient(90deg,#fff 0%,#ffd1e6 50%,#cbb3ff 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:.5px}
 .card h2{font-size:1.4rem;text-align:center}
 .card h3{font-size:.85rem;opacity:.6;margin-top:4px}
 
@@ -183,6 +193,9 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
 </style>
 </head>
 <body>
+
+<!-- Decorative sakura petals behind the menus (hidden during the game) -->
+<div id="petals"></div>
 
 <!-- ── Name ───────────────────────────────────────────────────────────────── -->
 <div id="nameScreen" class="screen active">
