@@ -97,9 +97,9 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
 .abtn.hint {background:transparent;border-color:rgba(255,255,255,.18);color:rgba(255,255,255,.45);font-size:.78rem;padding:5px 12px;pointer-events:none;text-shadow:none;box-shadow:none}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,77,109,.7)}50%{box-shadow:0 0 0 9px rgba(255,77,109,0)}}
 
-/* ── Chat panel ────────────────────────────────────────────────────────── */
-.chat-panel{width:260px;flex-shrink:0;display:flex;flex-direction:column;background:rgba(0,0,0,.4);border-left:1px solid rgba(255,255,255,.07);overflow:hidden;transition:width .2s}
-.chat-panel.collapsed{width:0}
+/* ── Chat panel (slide-in overlay so the board is always full-width) ─────── */
+.chat-panel{position:fixed;top:0;right:0;bottom:0;width:min(300px,86vw);z-index:80;display:flex;flex-direction:column;background:rgba(20,12,40,.96);border-left:1px solid rgba(255,255,255,.1);box-shadow:-8px 0 30px rgba(0,0,0,.5);overflow:hidden;transform:translateX(100%);transition:transform .22s ease}
+.chat-panel.open{transform:translateX(0)}
 .chat-header{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0}
 .chat-header span{font-weight:700;font-size:.88rem}
 .chat-toggle-btn{width:auto;flex:none;background:rgba(255,255,255,.1);border:none;color:#fff;border-radius:8px;padding:4px 10px;cursor:pointer;font-size:.9rem;line-height:1;box-shadow:none;text-shadow:none}
@@ -115,8 +115,8 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
 .chat-input-row input{flex:1;padding:7px 11px;font-size:.86rem;border-radius:18px}
 .chat-input-row button{padding:7px 13px;border-radius:18px;font-size:.82rem;flex-shrink:0;width:auto}
 
-/* Floating chat button */
-.chat-float-btn{position:fixed;bottom:14px;right:14px;z-index:50;background:#ff9ecd;color:#2a1040;border:none;border-radius:50%;width:44px;height:44px;font-size:1.2rem;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;transition:transform .14s}
+/* Floating chat button (all screen sizes, in-game) */
+.chat-float-btn{position:fixed;bottom:14px;right:14px;z-index:50;background:#ff9ecd;color:#2a1040;border:none;border-radius:50%;width:46px;height:46px;font-size:1.2rem;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;transition:transform .14s}
 .chat-float-btn:hover{transform:scale(1.1)}
 .chat-unread{position:absolute;top:-2px;right:-2px;background:#e74c3c;color:#fff;font-size:.62rem;font-weight:700;border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center}
 
@@ -186,11 +186,6 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
 ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.18);border-radius:2px}
 
 /* ── Responsive ─────────────────────────────────────────────────────────── */
-@media(max-width:850px){
-  .chat-panel{display:none}
-  .chat-float-btn{display:flex}
-  .chat-panel.mobile-open{display:flex;position:fixed;right:0;top:0;bottom:0;width:270px;z-index:80}
-}
 @media(max-width:480px){
   .card{padding:20px}
   .card h1{font-size:1.7rem}

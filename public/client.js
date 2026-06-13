@@ -708,15 +708,20 @@ function addChatMsg(m){
   d.innerHTML=`<div class="from">${esc(m.from)}</div><div class="text">${esc(m.text)}</div>`;
   el.appendChild(d); el.scrollTop=el.scrollHeight;
   const panel=document.getElementById('chatPanel');
-  if(!isMe&&(!chatOpen||panel.classList.contains('collapsed')||!document.getElementById('gameScreen').classList.contains('active'))){
+  if(!isMe&&(!panel.classList.contains('open')||!document.getElementById('gameScreen').classList.contains('active'))){
     unreadCount++; const b=document.getElementById('chatUnread'); b.textContent=unreadCount>9?'9+':unreadCount; b.style.display='flex';
   }
 }
 function addSystemMsg(t){const el=document.getElementById('chatMsgs');const d=document.createElement('div');d.className='chat-msg system';d.innerHTML=`<div class="text">${esc(t)}</div>`;el.appendChild(d);el.scrollTop=el.scrollHeight;}
 function clearChat(){document.getElementById('chatMsgs').innerHTML='';unreadCount=0;document.getElementById('chatUnread').style.display='none';}
-function toggleChat(){const p=document.getElementById('chatPanel');chatOpen=!chatOpen;p.classList.toggle('collapsed',!chatOpen);if(chatOpen){unreadCount=0;document.getElementById('chatUnread').style.display='none';}}
-function openMobileChat(){const p=document.getElementById('chatPanel');p.classList.add('mobile-open');unreadCount=0;document.getElementById('chatUnread').style.display='none';}
-document.addEventListener('click',e=>{const p=document.getElementById('chatPanel');if(p.classList.contains('mobile-open')&&!p.contains(e.target)&&e.target.id!=='chatFloatBtn')p.classList.remove('mobile-open');});
+// Slide-in chat overlay (all screen sizes). The float button toggles it.
+function toggleChat(){
+  const p=document.getElementById('chatPanel'); const opening=!p.classList.contains('open');
+  p.classList.toggle('open', opening);
+  if(opening){ unreadCount=0; document.getElementById('chatUnread').style.display='none'; const i=document.getElementById('chatIn'); if(i) setTimeout(()=>i.focus(),50); }
+}
+function openMobileChat(){ toggleChat(); }
+document.addEventListener('click',e=>{const p=document.getElementById('chatPanel');if(p.classList.contains('open')&&!p.contains(e.target)&&e.target.id!=='chatFloatBtn'&&!document.getElementById('chatFloatBtn').contains(e.target))p.classList.remove('open');});
 
 // ─── Phaser init ──────────────────────────────────────────────────────────────
 function initPhaser() {
@@ -820,6 +825,19 @@ class GameScene extends Phaser.Scene {
     this.objs=[];
   }
   track(o) { this.objs.push(o); return o; }
+
+  // Offset vector pointing from the table centre toward the player who just
+  // discarded (so a flying discard appears to come from their seat).
+  discarderDir(g, mag=120) {
+    const by=g.lastDiscardBy; if(!by) return {dx:0,dy:-mag};
+    const n=g.players.length, myIdx=g.players.findIndex(p=>p.id===myId);
+    const across=g.players[(myIdx+2)%n]?.id, left=g.players[(myIdx+1)%n]?.id, right=g.players[(myIdx+n-1)%n]?.id;
+    if (by===myId)   return {dx:0, dy:mag};    // from bottom (me)
+    if (by===across) return {dx:0, dy:-mag};   // from top
+    if (by===left)   return {dx:-mag, dy:0};   // from left
+    if (by===right)  return {dx:mag, dy:0};    // from right
+    return {dx:0, dy:-mag};
+  }
 
   // ── Player nameplate header (avatar + name + score) ──
   // Returns nothing; draws into the header strip [z.x, z.y, z.w, hdrH].
@@ -1269,10 +1287,13 @@ class GameScene extends Phaser.Scene {
       for(let i=startIdx;i<pool.length;i++){
         const isLast=(i===pool.length-1)&&!!g.lastDiscard;
         const c=this.drawTile(dx,dy,pool[i],{w:dw,h:dh,highlighted:isLast});
-        // Pop-in for the freshly discarded tile
+        // Freshly discarded tile flies in from the discarder's side of the table
         if (isLast && pool.length>(this._poolPrev||0)) {
-          c.setScale(1.6); c.setAlpha(0.4);
-          this.tweens.add({targets:c,scale:1,alpha:1,duration:200,ease:'Back.easeOut'});
+          const dir=this.discarderDir(g, dw*5);
+          const ox=c.x, oy=c.y;
+          c.x=ox+dir.dx; c.y=oy+dir.dy; c.setScale(1.25); c.setAlpha(0.15); c.setDepth(40);
+          this.tweens.add({targets:c, x:ox, y:oy, scale:1, alpha:1, duration:300, ease:'Cubic.easeOut',
+            onComplete:()=>{ try{c.setDepth(0);}catch{} }});
         }
         dx+=dw+dgap;
         if(dx+dw>poolX+poolW){dx=dx0; dy+=dh+dgap;}
