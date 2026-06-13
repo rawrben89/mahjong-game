@@ -1,0 +1,30 @@
+import { chromium } from 'playwright';
+const URL = 'https://experiencing-receptor-almost-lasting.trycloudflare.com/';
+const b = await chromium.launch();
+const hc=await b.newContext(); const host=await hc.newPage();
+const pc=await b.newContext(); const peer=await pc.newPage();
+const hErr=[]; host.on('pageerror',e=>hErr.push(e.message));
+const pErr=[]; peer.on('pageerror',e=>pErr.push(e.message));
+// Host
+await host.goto(URL); await host.waitForTimeout(1500);
+const title = await host.title();
+await host.fill('#nameIn','Hosty'); await host.click('text=Continue →');
+await host.waitForSelector('#lobbyScreen.active',{timeout:8000});
+await host.click('text=Create New Room');
+await host.waitForSelector('#waitingScreen.active',{timeout:8000});
+const code=(await host.textContent('#roomCodeDisp')).trim();
+console.log('title:', title, '| server room code:', code);
+// Peer joins by code through the REAL server
+await peer.goto(URL); await peer.waitForTimeout(1500);
+await peer.fill('#nameIn','Peery'); await peer.click('text=Continue →');
+await peer.waitForSelector('#lobbyScreen.active',{timeout:8000});
+await peer.fill('#codeIn', code); await peer.click('#codeIn ~ button');
+await peer.waitForTimeout(2500);
+const peerWait = await peer.evaluate(()=>document.getElementById('waitingScreen').classList.contains('active'));
+const hostCount = await host.textContent('#pcountDisp');
+console.log('peer joined waiting:', peerWait, '| host sees players:', hostCount);
+await host.click('#startBtn'); await host.waitForTimeout(3500);
+const bothIn = (await host.evaluate(()=>document.getElementById('gameScreen').classList.contains('active'))) && (await peer.evaluate(()=>document.getElementById('gameScreen').classList.contains('active')));
+console.log('both in game via real server:', bothIn, '| peer hand:', await peer.evaluate(()=>G?.myHand?.length||0));
+console.log('errors host:',hErr.slice(0,3),'peer:',pErr.slice(0,3));
+await b.close();

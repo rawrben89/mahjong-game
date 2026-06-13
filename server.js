@@ -10,6 +10,7 @@ const PORT = process.env.PORT || 3000;
 const MIME = {
   html: 'text/html; charset=utf-8',
   js:   'application/javascript; charset=utf-8',
+  json: 'application/json; charset=utf-8',
   svg:  'image/svg+xml',
   png:  'image/png',
   jpg:  'image/jpeg',
@@ -20,6 +21,10 @@ const httpServer = http.createServer((req, res) => {
     '/': './public/index.html',
     '/index.html': './public/index.html',
     '/client.js': './public/client.js',
+    '/game-core.js': './game-core.js',
+    '/local-core.js': './local-core.js',
+    '/sw.js': './public/sw.js',
+    '/manifest.json': './public/manifest.json',
   };
   let filePath = fileMap[url];
   if (!filePath && url.startsWith('/assets/') && !url.includes('..')) filePath = './public' + url;

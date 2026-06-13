@@ -8,6 +8,9 @@ let phaserGame = null;
 let soundEnabled = true;
 
 const FONT = '"M PLUS Rounded 1c","Segoe UI",sans-serif';
+// Seat-wind accent colours (match the mahjong-scoreboard palette)
+const WIND_COL = { east:0xc0392b, south:0x27ae60, west:0xe0a32e, north:0x4a78c8 };
+const WIND_INI = { east:'E', south:'S', west:'W', north:'N' };
 const WINDS_ARR = ['east','south','west','north'];
 const WE = { east:'🀀', south:'🀁', west:'🀂', north:'🀃' };
 const WL = { east:'East', south:'South', west:'West', north:'North' };
@@ -195,11 +198,28 @@ function hostOnline() {
     const hostServer = { readyState:1, send: s => { try { onMsg(JSON.parse(s)); } catch {} } };
     ws = { readyState:1, send: s => core.handleRaw(hostServer, s), close(){} };
     core.attachPlayer(hostServer);
+    // Create the room immediately so SOLO play works even fully offline —
+    // the engine is local and must not wait on the PeerJS broker.
+    tx({type:'setName', name:myName});
+    tx({type:'createRoom'});
+    // Best-effort: open a PeerJS peer so friends can join online. If the broker
+    // is unreachable (offline), this fails quietly and solo still works.
+    startHostPeer(core);
+  });
+}
+function startHostPeer(core){
+  try {
     peerObj = new window.Peer(PEER_PREFIX + shareCode, PEER_OPTS);
     peerObj.on('connection', conn => hostAcceptPeer(core, conn));
-    peerObj.on('error', e => { if (e.type==='unavailable-id') { peerObj.destroy(); hostOnline(); } else console.warn('peer', e.type); });
-    peerObj.on('open', () => { tx({type:'setName', name:myName}); tx({type:'createRoom'}); });
-  });
+    peerObj.on('error', e => {
+      if (e.type==='unavailable-id') {            // code clash — pick a new one
+        try{peerObj.destroy();}catch{}
+        shareCode = randCode(4);
+        document.getElementById('roomCodeDisp').textContent = shareCode;
+        startHostPeer(core);
+      } else { console.warn('peer', e.type); }     // offline / network — solo unaffected
+    });
+  } catch {}
 }
 function hostAcceptPeer(core, conn) {
   conn.on('open', () => { conn._pw = { readyState:1, send: s => { try{conn.send(s);}catch{} }, close(){ try{conn.close();}catch{} } }; core.attachPlayer(conn._pw); });
@@ -296,6 +316,7 @@ function onMsg(m) {
 
     case 'gameStarted':
       document.getElementById('winScreen').style.display='none';
+      document.getElementById('matchScreen').style.display='none';
       // Keep chat across rounds; only wipe it for a brand-new table
       if (!G) clearChat();
       showSc('gameScreen'); initPhaser();
@@ -350,6 +371,7 @@ function onMsg(m) {
       roomId=null; isHost=false; G=null; saveSession(); destroyPhaser(); showSc('lobbyScreen'); refreshRooms();
       break;
 
+    case 'matchOver': showMatchOver(m); break;
     case 'chat': addChatMsg(m); break;
     case 'error': showErr(m.msg||'Error'); break;
   }
@@ -417,8 +439,14 @@ function updWait(players) {
   }).join('');
   isHost=players.length>0&&players[0].id===myId;
   document.getElementById('startBtn').style.display=isHost?'block':'none';
+  { const r=document.getElementById('botLevelRow'); if(r) r.style.display=isHost?'block':'none'; }
 }
-function startGame() { tx({type:'startGame',withBots:true}); }
+let botLevel = 'medium';
+function setBotLevel(lvl){
+  botLevel = lvl;
+  document.querySelectorAll('#botLevelSeg .seg-btn').forEach(b=>b.classList.toggle('on', b.dataset.lvl===lvl));
+}
+function startGame() { tx({type:'startGame',withBots:true,botLevel}); }
 // ─── Rules / Fan Table (mirrors computeFan in game-core.js, sourced from
 //     rawrben89/mahjong-scoreboard) ───────────────────────────────────────────
 const RULES = [
@@ -505,6 +533,7 @@ function cancelLeave() { document.getElementById('leaveOvl').style.display='none
 function leaveRoom() {
   document.getElementById('leaveOvl').style.display='none';
   document.getElementById('winScreen').style.display='none';
+  document.getElementById('matchScreen').style.display='none';
   tx({type:'leaveRoom'}); destroyPhaser();
 }
 function copyCode() {
@@ -626,16 +655,49 @@ function showWin(g) {
   } else {
     document.getElementById('scoreDetail').textContent='';
   }
-  const sorted=[...g.players].sort((a,b)=>(g.scores[b.id]||0)-(g.scores[a.id]||0));
-  let tbl='<tr><td colspan="2" style="font-weight:700;padding-bottom:6px;color:#fff">This Hand — Points</td></tr>';
-  sorted.forEach(p=>{const pts=g.scores[p.id]||0;const col=pts>0?'#5dfc8b':pts<0?'#e74c3c':'#ff9ecd';tbl+=`<tr class="${p.id===g.winner?'winner-row':''}"><td>${esc(p.name)}${p.id===myId?' (You)':''}${p.isBot?' 🤖':''}</td><td style="color:${col}">${pts>0?'+':''}${pts}</td></tr>`;});
+  const hs = g.handScores || g.scores || {};
+  const tot = g.scores || {};
+  const sorted=[...g.players].sort((a,b)=>(tot[b.id]||0)-(tot[a.id]||0));
+  let tbl='<tr><td style="font-weight:700;padding-bottom:6px;color:#fff">Player</td>'+
+    '<td style="text-align:right;font-size:.78rem;opacity:.7">This hand</td>'+
+    '<td style="text-align:right;font-size:.78rem;opacity:.7">Total</td></tr>';
+  sorted.forEach(p=>{
+    const d=hs[p.id]||0, t=tot[p.id]||0;
+    const dc=d>0?'#5dfc8b':d<0?'#e74c3c':'#888';
+    const tc=t>0?'#5dfc8b':t<0?'#e74c3c':'#ff9ecd';
+    tbl+=`<tr class="${p.id===g.winner?'winner-row':''}"><td>${esc(p.name)}${p.id===myId?' (You)':''}${p.isBot?' 🤖':''}</td>`+
+      `<td style="text-align:right;color:${dc}">${d>0?'+':''}${d}</td>`+
+      `<td style="text-align:right;font-weight:700;color:${tc}">${t>0?'+':''}${t}</td></tr>`;
+  });
   document.getElementById('stbl').innerHTML=tbl;
-  // Only the host advances the round; others wait.
+  // Match progress + host-only Next Round
+  const minfo=document.getElementById('winMatchInfo');
+  if(minfo){ const wn=WL[WINDS_ARR[g.roundWindIdx||0]]||'East'; minfo.textContent=`${wn} Round · Hand ${g.round||1}`; }
   document.getElementById('nextRoundBtn').style.display = isHost ? 'block' : 'none';
   document.getElementById('nextHint').style.display = isHost ? 'none' : 'block';
   document.getElementById('winScreen').style.display='flex';
 }
 function requestNextRound(){ tx({type:'nextRound'}); document.getElementById('winScreen').style.display='none'; }
+
+// ─── Final match standings ────────────────────────────────────────────────────
+function showMatchOver(m){
+  document.getElementById('winScreen').style.display='none';
+  const box=document.getElementById('matchBody');
+  const medals=['🥇','🥈','🥉',''];
+  const champ=m.standings[0];
+  box.innerHTML = `<div style="font-size:3rem">🏆</div>`+
+    `<h2 style="color:#ffd700">${esc(champ.name)} wins the match!</h2>`+
+    `<div style="opacity:.6;font-size:.84rem;margin-bottom:6px">${m.hands} hands played · 4 rounds</div>`+
+    `<table class="stbl">`+ m.standings.map((p,i)=>{
+      const col=p.score>0?'#5dfc8b':p.score<0?'#e74c3c':'#ff9ecd';
+      return `<tr class="${i===0?'winner-row':''}"><td>${medals[i]} ${esc(p.name)}${p.id===myId?' (You)':''}${p.isBot?' 🤖':''}</td>`+
+        `<td style="text-align:right;font-weight:800;color:${col}">${p.score>0?'+':''}${p.score}</td></tr>`;
+    }).join('') + `</table>`;
+  document.getElementById('matchNewBtn').style.display = isHost ? 'block' : 'none';
+  document.getElementById('matchNewHint').style.display = isHost ? 'none' : 'block';
+  document.getElementById('matchScreen').style.display='flex';
+}
+function requestNewMatch(){ tx({type:'newMatch'}); document.getElementById('matchScreen').style.display='none'; }
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 document.getElementById('chatIn').addEventListener('keydown',e=>{if(e.key==='Enter')sendChat();});
@@ -758,6 +820,36 @@ class GameScene extends Phaser.Scene {
     this.objs=[];
   }
   track(o) { this.objs.push(o); return o; }
+
+  // ── Player nameplate header (avatar + name + score) ──
+  // Returns nothing; draws into the header strip [z.x, z.y, z.w, hdrH].
+  drawNameplate(z, hdrH, { wind, name, score, isCur, isBot, me }) {
+    const accent = WIND_COL[wind] || 0x888888;
+    const hbg=this.add.graphics(); this.track(hbg);
+    // Header bar with a left accent stripe
+    hbg.fillStyle(0x000000, isCur?0.34:0.22); hbg.fillRoundedRect(z.x,z.y,z.w,hdrH,{tl:8,tr:8,bl:0,br:0});
+    if (isCur){ hbg.fillStyle(accent,0.22); hbg.fillRoundedRect(z.x,z.y,z.w,hdrH,{tl:8,tr:8,bl:0,br:0}); }
+    hbg.fillStyle(accent,0.9); hbg.fillRoundedRect(z.x,z.y,3.5,hdrH,{tl:8,tr:0,bl:0,br:0});
+    // Avatar: seat-wind coloured disc with the wind initial
+    const ar=hdrH*0.36, ax=z.x+5+ar, ay=z.y+hdrH/2;
+    const av=this.add.graphics(); this.track(av);
+    av.fillStyle(accent,1); av.fillCircle(ax,ay,ar);
+    av.lineStyle(1.5,0xffffff,0.5); av.strokeCircle(ax,ay,ar);
+    av.fillStyle(0xffffff,0.18); av.fillEllipse(ax,ay-ar*0.4,ar*1.4,ar*0.7);
+    this.txt(ax,ay,WIND_INI[wind]||'?',{fontSize:`${Math.round(ar*1.1)}px`,fontStyle:'bold',color:'#ffffff',resolution:2}).setOrigin(0.5);
+    // Name
+    const nm=(isBot?'🤖 ':'')+(name||'').slice(0,me?14:9);
+    this.txt(ax+ar+5,ay,nm,{fontSize:'11px',fontStyle:isCur?'bold':'normal',color:isCur?'#ffffff':'#d7cde8',resolution:2}).setOrigin(0,0.5);
+    // Score (right)
+    const sc=(score>0?'+':'')+score, scCol=score>0?'#7dffa6':score<0?'#ff7676':'#cbb8e8';
+    this.txt(z.x+z.w-6,ay,sc,{fontSize:'11px',fontStyle:'bold',color:scCol,resolution:2}).setOrigin(1,0.5);
+    // Pulsing ring on the avatar marks the active player
+    if (isCur){
+      const ring=this.add.graphics().setDepth(6); this.track(ring);
+      ring.lineStyle(2,0xffd700,1); ring.strokeCircle(ax,ay,ar+2.5);
+      this.tweens.add({targets:ring,alpha:{from:1,to:0.25},duration:650,yoyo:true,repeat:-1});
+    }
+  }
 
   // ── Layout ──
   layout() {
@@ -962,18 +1054,24 @@ class GameScene extends Phaser.Scene {
   // ── Table background ──
   ensureFeltTexture() {
     if (this.textures.exists('felt')) return;
-    const c=this.textures.createCanvas('felt',512,512);
+    const S=640;
+    const c=this.textures.createCanvas('felt',S,S);
     const ctx=c.context;
-    const grd=ctx.createRadialGradient(256,236,70,256,256,400);
-    grd.addColorStop(0,'#46307c'); grd.addColorStop(0.7,'#312057'); grd.addColorStop(1,'#1d1238');
-    ctx.fillStyle=grd; ctx.fillRect(0,0,512,512);
+    // Warm centre spotlight fading to deep indigo at the edges
+    const grd=ctx.createRadialGradient(S/2,S*0.42,60,S/2,S/2,S*0.72);
+    grd.addColorStop(0,'#5a3d96'); grd.addColorStop(0.45,'#3a2570'); grd.addColorStop(0.8,'#241548'); grd.addColorStop(1,'#160c2e');
+    ctx.fillStyle=grd; ctx.fillRect(0,0,S,S);
     // Fabric speckle
-    for(let i=0;i<2600;i++){
-      ctx.fillStyle=`rgba(255,255,255,${Math.random()*0.035})`;
-      ctx.fillRect(Math.random()*512,Math.random()*512,1,1);
+    for(let i=0;i<3600;i++){
+      ctx.fillStyle=`rgba(255,255,255,${Math.random()*0.03})`;
+      ctx.fillRect(Math.random()*S,Math.random()*S,1,1);
       ctx.fillStyle=`rgba(0,0,0,${Math.random()*0.06})`;
-      ctx.fillRect(Math.random()*512,Math.random()*512,1,1);
+      ctx.fillRect(Math.random()*S,Math.random()*S,1,1);
     }
+    // Corner vignette for depth
+    const vg=ctx.createRadialGradient(S/2,S/2,S*0.34,S/2,S/2,S*0.72);
+    vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.45)');
+    ctx.fillStyle=vg; ctx.fillRect(0,0,S,S);
     c.refresh();
   }
   drawTable(L) {
@@ -982,9 +1080,9 @@ class GameScene extends Phaser.Scene {
     const felt=this.add.image(W/2,H/2,'felt').setDisplaySize(W,H); this.track(felt);
     const bg=this.add.graphics(); this.track(bg);
     // Lacquer frame with gold + sakura inlay
-    bg.lineStyle(6,0x241040,0.95); bg.strokeRect(3,3,W-6,H-6);
-    bg.lineStyle(2,0xd4af37,0.7); bg.strokeRect(7,7,W-14,H-14);
-    bg.lineStyle(1,0xff9ecd,0.35); bg.strokeRect(10,10,W-20,H-20);
+    bg.lineStyle(7,0x1c0f38,0.95); bg.strokeRoundedRect(3,3,W-6,H-6,10);
+    bg.lineStyle(2,0xd4af37,0.65); bg.strokeRoundedRect(8,8,W-16,H-16,9);
+    bg.lineStyle(1,0xff9ecd,0.3); bg.strokeRoundedRect(11,11,W-22,H-22,8);
   }
 
   // ── Info bar ──
@@ -1048,22 +1146,11 @@ class GameScene extends Phaser.Scene {
     this.zoneBg(z,0x000000,isCur?0.27:0.18);
     if (isCur) {
       const glow=this.add.graphics(); this.track(glow);
-      glow.lineStyle(2,0xff9ecd,0.5); glow.strokeRoundedRect(z.x+1,z.y+1,z.w-2,z.h-2,8);
-      this.tweens.add({targets:glow,alpha:{from:0.7,to:0.15},duration:850,yoyo:true,repeat:-1});
+      glow.lineStyle(2.5,0xffd700,0.6); glow.strokeRoundedRect(z.x+1,z.y+1,z.w-2,z.h-2,8);
+      this.tweens.add({targets:glow,alpha:{from:0.8,to:0.18},duration:850,yoyo:true,repeat:-1});
     }
 
-    // Header bg
-    const hbg=this.add.graphics(); this.track(hbg);
-    hbg.fillStyle(isCur?0xff9ecd:0x000000,isCur?0.18:0.12);
-    hbg.fillRoundedRect(z.x,z.y,z.w,hdrH,{tl:8,tr:8,bl:0,br:0});
-
-    // Wind badge (mini tile) + name
-    this.drawTile(z.x+3,z.y+2,{suit:'wind',value:wind},{w:16,h:20});
-    const nameCol=isCur?'#ff9ecd':'#dddddd';
-    this.txt(z.x+22,z.y+hdrH/2,(player.isBot?'🤖 ':'')+player.name.slice(0,11)+(isCur?' ◀':''),
-      {fontSize:'11px',color:nameCol}).setOrigin(0,0.5);
-    const scCol=score>0?'#5dfc8b':score<0?'#e74c3c':'#aaaaaa';
-    this.txt(z.x+z.w-5,z.y+hdrH/2,`${score>0?'+':''}${score}`,{fontSize:'10px',color:scCol}).setOrigin(1,0.5);
+    this.drawNameplate(z, hdrH, { wind, name:player.name, score, isCur, isBot:player.isBot, me:false });
 
     let curY=z.y+hdrH+pad;
 
@@ -1119,6 +1206,19 @@ class GameScene extends Phaser.Scene {
     // tall on narrow portrait screens.
     const ringH=Math.min(Math.round(availH*0.94), Math.round(ringW*0.96));
     const ringX=z.x+(z.w-ringW)/2, ringY=z.y+pad+Math.round((availH-ringH)/2);
+    const ecx=ringX+ringW/2, ecy=ringY+ringH/2;
+
+    // ── Decorative centre medallion (behind the pool so an empty table reads
+    //    intentional). A jade ring with a soft 🀄 / sakura motif. ──
+    const emR=Math.min(ringW,ringH)*0.30;
+    const em=this.add.graphics(); this.track(em); em.setDepth(0);
+    em.fillStyle(0xffffff,0.018); em.fillCircle(ecx,ecy,emR*1.18);
+    em.lineStyle(2,0xffd166,0.10); em.strokeCircle(ecx,ecy,emR);
+    em.lineStyle(1,0xff9ecd,0.10); em.strokeCircle(ecx,ecy,emR*0.78);
+    // four faint petal dots at compass points
+    for(let i=0;i<4;i++){ const a=i*Math.PI/2; em.fillStyle(0xff9ecd,0.10); em.fillCircle(ecx+Math.cos(a)*emR,ecy+Math.sin(a)*emR,2.6); }
+    const emT=this.add.text(ecx,ecy,'🀄',{fontSize:`${Math.round(emR*0.9)}px`}).setOrigin(0.5).setAlpha(0.06).setDepth(0);
+    this.track(emT);
     const wt=narrow?9:12, wh=Math.round(wt*1.21), wgap=2;
     const cornerPad=wh+6;
     const topN=Math.max(4,Math.floor((ringW-2*cornerPad)/(wt+wgap)));
@@ -1215,25 +1315,16 @@ class GameScene extends Phaser.Scene {
     const z={x:zone.x, w:zone.w, h:panelH, y:zone.y+zone.h-panelH};
 
     const mbg=this.add.graphics(); this.track(mbg);
-    mbg.fillStyle(0x000000,0.28); mbg.fillRoundedRect(z.x,z.y,z.w,z.h,8);
-    mbg.lineStyle(1.5,isCur?0xff9ecd:0xffffff,isCur?0.35:0.07); mbg.strokeRoundedRect(z.x,z.y,z.w,z.h,8);
+    mbg.fillStyle(0x000000,0.34); mbg.fillRoundedRect(z.x,z.y,z.w,z.h,8);
+    mbg.lineStyle(1.5,isCur?0xffd700:0xffffff,isCur?0.4:0.08); mbg.strokeRoundedRect(z.x,z.y,z.w,z.h,8);
 
     if (isCur) {
       const glow=this.add.graphics(); this.track(glow);
-      glow.lineStyle(2.5,0xf1c40f,0.45); glow.strokeRoundedRect(z.x+2,z.y+2,z.w-4,z.h-4,7);
-      this.tweens.add({targets:glow,alpha:{from:0.7,to:0.1},duration:750,yoyo:true,repeat:-1});
+      glow.lineStyle(2.5,0xffd700,0.5); glow.strokeRoundedRect(z.x+2,z.y+2,z.w-4,z.h-4,7);
+      this.tweens.add({targets:glow,alpha:{from:0.8,to:0.15},duration:750,yoyo:true,repeat:-1});
     }
 
-    const hbg=this.add.graphics(); this.track(hbg);
-    hbg.fillStyle(isCur?0xf1c40f:0x000000,isCur?0.15:0.12);
-    hbg.fillRoundedRect(z.x,z.y,z.w,hdrH,{tl:8,tr:8,bl:0,br:0});
-
-    // Wind tile + label
-    this.drawTile(z.x+3,z.y+2,{suit:'wind',value:wind},{w:16,h:20});
-    this.txt(z.x+22,z.y+hdrH/2,`${WL[wind]} · You${isCur?' — Your Turn! ◀':''}`,
-      {fontSize:'11.5px',color:isCur?'#f1c40f':'#dddddd',fontStyle:isCur?'bold':'normal'}).setOrigin(0,0.5);
-    const scCol=score>0?'#5dfc8b':score<0?'#e74c3c':'#ff9ecd';
-    this.txt(z.x+z.w-6,z.y+hdrH/2,`${score>0?'+':''}${score} pts`,{fontSize:'11px',color:scCol}).setOrigin(1,0.5);
+    this.drawNameplate(z, hdrH, { wind, name:`You · ${WL[wind]}`, score, isCur, isBot:false, me:true });
 
     // Bonus + melds row
     const bonusRowY=z.y+hdrH+4;

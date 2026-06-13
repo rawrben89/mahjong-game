@@ -8,6 +8,9 @@
 <meta name="theme-color" content="#1a1033">
 <title>雀 HK Mahjong</title>
 <link rel="icon" type="image/svg+xml" href="assets/tiles/d1.svg">
+<link rel="apple-touch-icon" href="assets/icon-192.png">
+<link rel="manifest" href="manifest.json">
+<script>if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;900&display=swap" rel="stylesheet">
@@ -49,6 +52,12 @@ button:active{transform:none}
 button.sec{background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.15);box-shadow:none;text-shadow:none}
 button.sec:hover{background:rgba(255,255,255,.18);box-shadow:none}
 button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba(231,76,60,.3)}
+
+/* Segmented control (bot difficulty) */
+.seg{display:flex;gap:0;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:3px;width:100%}
+.seg-btn{flex:1;width:auto;padding:7px 4px;font-size:.82rem;font-weight:700;border:none;border-radius:7px;background:transparent;color:rgba(255,255,255,.6);box-shadow:none;text-shadow:none;letter-spacing:.2px;transition:all .14s}
+.seg-btn:hover{background:rgba(255,255,255,.06);color:#fff;transform:none;box-shadow:none}
+.seg-btn.on{background:linear-gradient(135deg,#ff8fc7,#c98fff);color:#fff;box-shadow:0 2px 8px rgba(255,143,199,.35)}
 
 .sep{height:1px;background:rgba(255,255,255,.12);margin:2px 0}
 .err{color:#e74c3c;font-size:.82rem;text-align:center;min-height:16px}
@@ -251,9 +260,17 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
     <div id="waitPlayers" style="display:flex;flex-direction:column;gap:6px"></div>
     <div class="sep"></div>
     <div id="handInfo" style="font-size:.78rem;opacity:.55;text-align:center"></div>
+    <div id="botLevelRow">
+      <div style="font-size:.78rem;opacity:.6;text-align:center;margin-bottom:5px">🤖 Bot difficulty</div>
+      <div class="seg" id="botLevelSeg">
+        <button class="seg-btn" data-lvl="easy" onclick="setBotLevel('easy')">Easy</button>
+        <button class="seg-btn on" data-lvl="medium" onclick="setBotLevel('medium')">Medium</button>
+        <button class="seg-btn" data-lvl="hard" onclick="setBotLevel('hard')">Hard</button>
+      </div>
+    </div>
     <div style="font-size:.78rem;opacity:.55;text-align:center">Empty seats fill with bots when host starts.</div>
     <button id="startBtn" onclick="startGame()" style="margin-top:4px">▶ Start Game (fill with bots)</button>
-    <button class="sec" onclick="leaveRoom()">← Leave Room</button>
+    <button class="sec" onclick="confirmLeave()">← Leave Room</button>
     <div id="waitErr" class="err"></div>
   </div>
 </div>
@@ -346,9 +363,22 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
     <div id="scoreDetail" class="score-detail"></div>
     <div class="sep"></div>
     <table class="stbl" id="stbl"></table>
+    <div id="winMatchInfo" style="font-size:.76rem;opacity:.5;text-align:center;margin-top:2px"></div>
     <div id="nextHint" class="inf" style="display:none">⏳ Waiting for the host to start the next round…</div>
     <div class="btn-row" style="margin-top:4px">
       <button id="nextRoundBtn" onclick="requestNextRound()">▶ Next Round</button>
+      <button class="sec" onclick="confirmLeave()">🚪 Leave</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Final match standings ──────────────────────────────────────────────── -->
+<div id="matchScreen" style="position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:300;display:none;align-items:center;justify-content:center;overflow:hidden">
+  <div class="wincard" style="border-color:#ffd700">
+    <div id="matchBody" style="display:flex;flex-direction:column;gap:10px;align-items:center"></div>
+    <div id="matchNewHint" class="inf" style="display:none">⏳ Waiting for the host to start a new match…</div>
+    <div class="btn-row" style="margin-top:6px">
+      <button id="matchNewBtn" onclick="requestNewMatch()">🔄 New Match</button>
       <button class="sec" onclick="confirmLeave()">🚪 Leave</button>
     </div>
   </div>

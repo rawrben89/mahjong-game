@@ -338,31 +338,62 @@ function dealGame(playerIds, prevailingWind) {
   };
 }
 
-// ─── Bot AI ─────────────────────────────────────────────────────────────────
+// ─── Bot AI (difficulty-aware: 'easy' | 'medium' | 'hard') ───────────────────
 function botScoreTile(tile, hand) {
   const count = hand.filter(t => same(t, tile)).length;
   if (count >= 3) return 30;
   if (count >= 2) return 20;
-  if (!SUITS.includes(tile.suit)) return 2;
+  if (!SUITS.includes(tile.suit)) return count >= 1 ? 8 : 2;
   const v = tile.value;
   const has = n => hand.some(t => t.suit === tile.suit && t.value === n);
   let s = 0;
-  if (has(v - 1) && has(v + 1)) s += 15;
-  if (has(v - 1) || has(v + 1)) s += 7;
-  if (has(v - 2) || has(v + 2)) s += 3;
-  if (v === 1 || v === 9) s -= 2;
+  if (has(v - 1) && has(v + 1)) s += 15;        // fills a gap
+  if (has(v - 1) || has(v + 1)) s += 7;         // adjacent
+  if (has(v - 2) || has(v + 2)) s += 3;         // one-gap
+  if (v === 1 || v === 9) s -= 2;               // terminals less flexible
   return s;
 }
 
-function botChooseDiscard(hand) {
-  const scored = hand.map(t => ({ t, s: botScoreTile(t, hand) })).sort((a, b) => a.s - b.s);
+// The suit the hand leans toward (for flush-seeking hard bots)
+function dominantSuit(hand) {
+  const c = { bamboo: 0, characters: 0, circles: 0 };
+  hand.forEach(t => { if (SUITS.includes(t.suit)) c[t.suit]++; });
+  let best = 'bamboo', n = -1;
+  for (const s in c) if (c[s] > n) { n = c[s]; best = s; }
+  return { suit: best, count: n };
+}
+
+function botChooseDiscard(hand, level = 'medium') {
+  const scored = hand.map(t => ({ t, s: botScoreTile(t, hand) }));
+  if (level === 'hard') {
+    // Commit to a flush when one suit clearly dominates: dump off-suit tiles
+    const dom = dominantSuit(hand);
+    if (dom.count >= 8) scored.forEach(o => { if (SUITS.includes(o.t.suit) && o.t.suit !== dom.suit) o.s -= 12; });
+  }
+  scored.sort((a, b) => a.s - b.s);
+  if (level === 'easy') {
+    // Loose, less optimal: drop a random tile from the 4 least useful
+    const pool = scored.slice(0, Math.min(4, scored.length));
+    return pool[Math.floor(Math.random() * pool.length)].t;
+  }
   return scored[0].t;
 }
 
-function botDecide(hand, actions) {
+// Returns { action } and optionally { chowVals } for chow claims.
+function botDecide(hand, actions, level = 'medium') {
   if (actions.includes('win')) return { action: 'win' };
+  if (level === 'easy') {
+    // Casual: usually just lets discards go by, occasionally pongs
+    if (actions.includes('pong') && Math.random() < 0.4) return { action: 'pong' };
+    return { action: 'pass' };
+  }
   if (actions.includes('kong')) return { action: 'kong' };
   if (actions.includes('pong')) return { action: 'pong' };
+  // Only hard bots actively call chow, and not when chasing a pung/flush hand
+  if (level === 'hard' && actions.includes('chow')) {
+    const dom = dominantSuit(hand);
+    if (dom.count < 8) return { action: 'chow' };
+  }
   return { action: 'pass' };
 }
 
@@ -455,7 +486,8 @@ function gameStateFor(game, room, pid) {
     lastDiscard: game.lastDiscard,
     lastDiscardBy: game.lastDiscardBy,
     myActions,
-    scores: game.scores,
+    scores: game.scores,            // cumulative match totals
+    handScores: game.handScores,    // this hand's deltas
     players: room.players.map(p => ({
       id: p.id, name: p.name,
       seatWind: game.seatWinds[p.id],
@@ -467,6 +499,8 @@ function gameStateFor(game, room, pid) {
     winnerHand: game.winner && game.winner !== 'draw' ? game.hands[game.winner] : null,
     winnerMelds: game.winner && game.winner !== 'draw' ? game.melds[game.winner] : null,
     round: game.round,
+    roundWindIdx: game.roundWindIdx,
+    handNo: game.handNo,
   };
 }
 
@@ -521,8 +555,13 @@ function setupClaims(room) {
     if (acts.length === 0) return;
 
     if (g.isBot[pid]) {
-      const dec = botDecide(g.hands[pid], acts);
+      const dec = botDecide(g.hands[pid], acts, g.botLevel);
       g.pendingClaims[pid] = dec.action;
+      if (dec.action === 'chow') {
+        const opts = chowOptions(g.hands[pid], g.lastDiscard);
+        if (opts.length) g.claimChowVals[pid] = opts[0];
+        else g.pendingClaims[pid] = 'pass';
+      }
     } else {
       g.awaitingClaims.add(pid);
       anyHuman = true;
@@ -579,28 +618,33 @@ function applyWin(room, pid, selfDraw) {
 
   // Payment (mahjong-scoreboard rules): points = fan, East involvement doubles.
   // Self-draw: every loser pays; discard/rob: the discarder pays all 3 shares.
+  // Compute this hand's deltas, then fold into the cumulative match scores.
   const dealer = g.players[0];
+  const delta = {}; g.players.forEach(p => delta[p] = 0);
   let winnerTotal = 0;
   if (selfDraw) {
     g.players.forEach(p => {
       if (p === pid) return;
       const mult = (p === dealer || pid === dealer) ? 2 : 1;
       const pay = fan * mult;
-      g.scores[p] = (g.scores[p] || 0) - pay;
+      delta[p] -= pay;
       winnerTotal += pay;
     });
-    g.scores[pid] = (g.scores[pid] || 0) + winnerTotal;
+    delta[pid] += winnerTotal;
   } else {
     const discarder = g.lastDiscardBy;
     const mult = (pid === dealer || discarder === dealer) ? 2 : 1;
     winnerTotal = fan * 3 * mult;
-    if (discarder && discarder !== pid) {
-      g.scores[discarder] = (g.scores[discarder] || 0) - winnerTotal;
-      g.scores[pid] = (g.scores[pid] || 0) + winnerTotal;
-    } else {
-      g.scores[pid] = (g.scores[pid] || 0) + winnerTotal;
-    }
+    delta[pid] += winnerTotal;
+    if (discarder && discarder !== pid) delta[discarder] -= winnerTotal;
   }
+  // Apply to this hand's delta and the cumulative totals
+  room.matchScores = room.matchScores || {};
+  g.players.forEach(p => {
+    g.handScores[p] = (g.handScores[p] || 0) + delta[p];
+    g.scores[p] = (g.scores[p] || 0) + delta[p];
+    room.matchScores[p] = (room.matchScores[p] || 0) + delta[p];
+  });
   g.winScore = { fan, breakdown, total: winnerTotal };
 
   sendState(room);
@@ -634,7 +678,7 @@ function applyMeld(room, pid, type) {
     g._kongPid = null; g._kongChain = 0; g._afterKongDraw = null;
     g.phase = 'discard';
     sendState(room);
-    if (g.isBot[pid]) setTimeout(() => { const d2 = botChooseDiscard(g.hands[pid]); doDiscard(room, pid, d2.id); }, 700);
+    if (g.isBot[pid]) setTimeout(() => { const d2 = botChooseDiscard(g.hands[pid], g.botLevel); doDiscard(room, pid, d2.id); }, 700);
   }
 }
 
@@ -657,6 +701,8 @@ function applyChow(room, pid, chowVals) {
   g.pendingClaims = {};
   g.awaitingClaims = new Set();
   sendState(room);
+  // A bot that just chowed must still discard (mirrors applyMeld for pong)
+  if (g.isBot[pid]) setTimeout(() => { const d2 = botChooseDiscard(g.hands[pid], g.botLevel); doDiscard(room, pid, d2.id); }, 700);
 }
 
 function doDraw(room, pid) {
@@ -809,7 +855,7 @@ function botDraw(room) {
     return;
   }
   sendState(room);
-  setTimeout(() => { const d = botChooseDiscard(g.hands[pid]); doDiscard(room, pid, d.id); }, 700);
+  setTimeout(() => { const d = botChooseDiscard(g.hands[pid], g.botLevel); doDiscard(room, pid, d.id); }, 700);
 }
 
 // ─── Room / game management ──────────────────────────────────────────────────
@@ -845,17 +891,29 @@ function startGame(room, withBots) {
 
   room.game = dealGame(rotated, WINDS[prevWindIdx]);
   room.game.round = rotation + 1;
+  // Round wind index 0-3 (East..North) and match-hand counter for the scoreboard
+  room.game.roundWindIdx = prevWindIdx;
+  room.handNo = (room.handNo || 0) + 1;
+  room.game.handNo = room.handNo;
+
+  // Cumulative match scores carry across hands; handScores is just this hand.
+  room.matchScores = room.matchScores || {};
+  allIds.forEach(id => { if (room.matchScores[id] == null) room.matchScores[id] = 0; });
+  room.game.scores = {};
+  room.game.handScores = {};
+  allIds.forEach(id => { room.game.scores[id] = room.matchScores[id] || 0; room.game.handScores[id] = 0; });
 
   if (withBots) {
     room.players.filter(p => p.id.startsWith('bot-')).forEach(p => { room.game.isBot[p.id] = true; });
   }
+  room.game.botLevel = room.botLevel || 'medium';
 
   broadcastRoom(room, { type: 'gameStarted', windChanged: room._windChanged || null });
   room._windChanged = null;
   sendState(room);
 
   if (room.game.isBot[room.game.currentPlayer]) {
-    setTimeout(() => { const d = botChooseDiscard(room.game.hands[room.game.currentPlayer]); doDiscard(room, room.game.currentPlayer, d.id); }, 1000);
+    setTimeout(() => { const d = botChooseDiscard(room.game.hands[room.game.currentPlayer], room.game.botLevel); doDiscard(room, room.game.currentPlayer, d.id); }, 1000);
   }
 }
 
@@ -933,6 +991,7 @@ function handleMsg(ws, player, msg) {
     const room = rooms.get(player.roomId);
     if (!room || room.players[0].id !== player.id) return;
     if (room.state !== 'waiting') return;
+    if (['easy','medium','hard'].includes(msg.botLevel)) room.botLevel = msg.botLevel;
     startGame(room, msg.withBots !== false);
     return;
   }
@@ -1009,19 +1068,40 @@ function handleMsg(ws, player, msg) {
     }
 
     if (type === 'nextRound') {
+      // A full match is the four winds × four dealers (seatRotation 0..15).
+      // When that completes, show final standings instead of dealing again.
+      if ((room2.seatRotation || 0) >= 16) {
+        const standings = room2.players.map(p => ({
+          id: p.id, name: p.name, isBot: !!(room2.game.isBot && room2.game.isBot[p.id]),
+          score: (room2.matchScores && room2.matchScores[p.id]) || 0,
+        })).sort((a, b) => b.score - a.score);
+        broadcastRoom(room2, { type: 'matchOver', standings, hands: room2.handNo || 0 });
+        return;
+      }
       // Keep the SAME players (incl. bots with stable IDs) so the dealer truly
       // rotates among them; just re-deal the next hand.
       const newWindIdx = Math.min(Math.floor((room2.seatRotation || 0) / 4), 3);
       room2._windChanged = (newWindIdx !== oldWindIdx) ? WINDS[newWindIdx] : null;
       startGame(room2, true);
     } else {
-      // Full reset back to the waiting room — drop bots so seats can refill.
+      // Full reset back to the waiting room — drop bots and clear the match.
       room2.players = room2.players.filter(p => !p.id.startsWith('bot-'));
       if (room2.basePlayerOrder) room2.basePlayerOrder = room2.basePlayerOrder.filter(id => !id.startsWith('bot-'));
       room2.state = 'waiting';
       room2.game = null;
-      broadcastRoom(room2, { type: 'gameReset', players: room2.players.map(p => ({ id: p.id, name: p.name })), seatRotation: room2.seatRotation || 0 });
+      room2.seatRotation = 0; room2.matchScores = {}; room2.handNo = 0;
+      broadcastRoom(room2, { type: 'gameReset', players: room2.players.map(p => ({ id: p.id, name: p.name })), seatRotation: 0 });
     }
+    return;
+  }
+
+  // Start a fresh match (reset scores + rotation) and deal hand 1 right away.
+  if (type === 'newMatch') {
+    const room2 = rooms.get(player.roomId);
+    if (!room2 || !room2.game) return;
+    if (room2.players[0] && room2.players[0].id !== player.id) return;
+    room2.seatRotation = 0; room2.matchScores = {}; room2.handNo = 0; room2._windChanged = null;
+    startGame(room2, true);
     return;
   }
 
