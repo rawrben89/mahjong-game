@@ -204,7 +204,7 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
   <div class="card">
     <h1>🌸 雀 Mahjong</h1>
     <div style="text-align:center;opacity:.65;font-size:.88rem">Hello, <span id="myNameDisp" style="color:#ff9ecd;font-weight:700"></span>!</div>
-    <div class="local-only inf" style="display:none">🎴 Offline solo mode — create a room and play against bots. (Online multiplayer runs on the hosted version.)</div>
+    <div class="local-only inf" style="display:none">🎴 Create a room to play vs bots, or share your room code so friends can join online!</div>
     <div class="sep"></div>
     <button onclick="createRoom()">🏠 Create New Room</button>
     <div class="sep"></div>
@@ -213,12 +213,12 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
       <input id="codeIn" placeholder="Room code" style="text-transform:uppercase;letter-spacing:2px;flex:1">
       <button onclick="joinCode()" style="width:auto;padding:11px 16px">Join</button>
     </div>
-    <div class="sep"></div>
-    <div style="display:flex;justify-content:space-between;align-items:center">
+    <div class="sep online-hide"></div>
+    <div class="online-hide" style="display:flex;justify-content:space-between;align-items:center">
       <h3>Open Rooms</h3>
       <button class="sec" style="width:auto;padding:4px 10px;font-size:.78rem" onclick="refreshRooms()">↻ Refresh</button>
     </div>
-    <div id="roomListEl" style="display:flex;flex-direction:column;gap:5px;max-height:200px;overflow-y:auto"></div>
+    <div id="roomListEl" class="online-hide" style="display:flex;flex-direction:column;gap:5px;max-height:200px;overflow-y:auto"></div>
     <div id="lobbyErr" class="err"></div>
     <div class="sep"></div>
     <button class="sec" onclick="showRules()">📖 Rules &amp; Fan Table</button>

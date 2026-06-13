@@ -157,28 +157,73 @@ function detectEvents(prev, curr) {
 // in-browser instead — fully playable solo vs bots. Multiplayer still uses the
 // real server on Node/Cloudflare.
 const LOCAL_MODE = location.hostname.endsWith('github.io') || location.protocol === 'file:' || /[?&]local=1/.test(location.search);
+let netRole = null;        // 'host' | 'peer' (LOCAL_MODE only)
+let shareCode = null;      // the code players share to join (LOCAL_MODE)
+let peerObj = null;        // PeerJS instance
+const PEER_PREFIX = 'hkmj-';
 if (LOCAL_MODE) {
-  const s = document.createElement('script');
-  s.type = 'module'; s.src = 'local-core.js';
-  document.head.appendChild(s);
+  const s1 = document.createElement('script'); s1.type='module'; s1.src='local-core.js'; document.head.appendChild(s1);
+  const s2 = document.createElement('script'); s2.src='assets/vendor/peerjs.min.js'; document.head.appendChild(s2);
+}
+function whenLocalReady(cb, n=0) {
+  if (window.__localCore && window.Peer) return cb();
+  if (n > 80) { showErr('Failed to load game engine — refresh the page.'); return; }
+  setTimeout(() => whenLocalReady(cb, n+1), 80);
+}
+function randCode(len=4){ const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s=''; for(let i=0;i<len;i++) s+=A[Math.floor(Math.random()*A.length)]; return s; }
+
+// ── LOCAL_MODE host: this browser runs the authoritative engine; friends
+//    connect over WebRTC. Solo = hosting with no peers (bots fill seats). ──
+function hostOnline() {
+  whenLocalReady(() => {
+    const core = window.__localCore;
+    shareCode = randCode(4); netRole = 'host';
+    // Host's own seat: engine output → onMsg (renders for the host)
+    const hostServer = { readyState:1, send: s => { try { onMsg(JSON.parse(s)); } catch {} } };
+    ws = { readyState:1, send: s => core.handleRaw(hostServer, s), close(){} };
+    core.attachPlayer(hostServer);
+    peerObj = new window.Peer(PEER_PREFIX + shareCode);
+    peerObj.on('connection', conn => hostAcceptPeer(core, conn));
+    peerObj.on('error', e => { if (e.type==='unavailable-id') { peerObj.destroy(); hostOnline(); } else console.warn('peer', e.type); });
+    peerObj.on('open', () => { tx({type:'setName', name:myName}); tx({type:'createRoom'}); });
+  });
+}
+function hostAcceptPeer(core, conn) {
+  conn.on('open', () => { conn._pw = { readyState:1, send: s => { try{conn.send(s);}catch{} }, close(){ try{conn.close();}catch{} } }; core.attachPlayer(conn._pw); });
+  conn.on('data', raw => {
+    if (!conn._pw) return;
+    let m; try { m = JSON.parse(raw); } catch { return; }
+    if (m.type==='joinRoom') m.roomId = roomId; // map share code → host's engine room
+    core.handleRaw(conn._pw, JSON.stringify(m));
+  });
+  conn.on('close', () => { if (conn._pw) core.handleClose(conn._pw); });
+  conn.on('error', () => { if (conn._pw) core.handleClose(conn._pw); });
 }
 
-// In LOCAL_MODE, `ws` is a shim that pipes messages straight into the engine
-// running in this same browser tab (no network).
-function connectLocal() {
-  if (!window.__localCore) { setTimeout(connectLocal, 80); return; }
-  const core = window.__localCore;
-  const serverSide = { readyState: 1, send: s => { const m = JSON.parse(s); setTimeout(() => onMsg(m), 0); } };
-  ws = { readyState: 1, send: s => core.handleRaw(serverSide, s), close() {} };
-  core.attachPlayer(serverSide);
-  const saved = sessionStorage.getItem('mjSession');
-  if (saved) { try { const sx = JSON.parse(saved); if (sx.name) tx({ type: 'setName', name: sx.name }); } catch {} }
-  // Hint that this is the offline solo build
-  document.querySelectorAll('.local-only').forEach(el => el.style.display = 'block');
+// ── LOCAL_MODE peer: connect to a host and talk to it like a server ──
+function joinOnline(code) {
+  if (!code) { showErr('Enter a room code'); return; }
+  whenLocalReady(() => {
+    shareCode = code; netRole = 'peer';
+    peerObj = new window.Peer();
+    peerObj.on('open', () => {
+      const conn = peerObj.connect(PEER_PREFIX + code, { reliable:true });
+      const timer = setTimeout(() => { if (!ws) showErr('No host found for code ' + code); }, 9000);
+      conn.on('open', () => {
+        clearTimeout(timer);
+        ws = { readyState:1, send: s => { try{conn.send(s);}catch{} }, close(){ try{conn.close();}catch{} } };
+        tx({type:'setName', name:myName});
+        tx({type:'joinRoom', roomId:code});
+      });
+      conn.on('data', raw => { try { onMsg(JSON.parse(raw)); } catch {} });
+      conn.on('close', () => { showErr('Disconnected from host.'); showSc('lobbyScreen'); });
+    });
+    peerObj.on('error', e => showErr('Connection failed: ' + e.type));
+  });
 }
 
 function connect() {
-  if (LOCAL_MODE) { connectLocal(); return; }
+  if (LOCAL_MODE) { document.querySelectorAll('.local-only').forEach(el=>el.style.display='block'); document.querySelectorAll('.online-hide').forEach(el=>el.style.display='none'); return; }
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   // /ws path: Node server accepts any path; on Cloudflare Workers a non-asset
   // path is needed so the upgrade reaches the Durable Object.
@@ -295,13 +340,19 @@ function showErr(msg) { const el=document.querySelector('.screen.active .err'); 
 
 // ─── Name ─────────────────────────────────────────────────────────────────────
 document.getElementById('nameIn').addEventListener('keydown', e=>{ if(e.key==='Enter') submitName(); });
-function submitName() { const n=document.getElementById('nameIn').value.trim(); if(!n){document.getElementById('nameErr').textContent='Please enter a name';return;} tx({type:'setName',name:n}); }
+function submitName() {
+  const n=document.getElementById('nameIn').value.trim();
+  if(!n){document.getElementById('nameErr').textContent='Please enter a name';return;}
+  // LOCAL_MODE has no server to register the name — go straight to the lobby.
+  if (LOCAL_MODE) { myName=n; document.getElementById('myNameDisp').textContent=n; saveSession(); showSc('lobbyScreen'); return; }
+  tx({type:'setName',name:n});
+}
 
 // ─── Lobby ────────────────────────────────────────────────────────────────────
-function createRoom() { tx({type:'createRoom'}); }
-function joinCode() { const c=document.getElementById('codeIn').value.trim().toUpperCase(); if(c) tx({type:'joinRoom',roomId:c}); }
-function refreshRooms() { tx({type:'listRooms'}); }
-function joinById(id) { tx({type:'joinRoom',roomId:id}); }
+function createRoom() { if (LOCAL_MODE) return hostOnline(); tx({type:'createRoom'}); }
+function joinCode() { const c=document.getElementById('codeIn').value.trim().toUpperCase(); if(!c) return; if (LOCAL_MODE) return joinOnline(c); tx({type:'joinRoom',roomId:c}); }
+function refreshRooms() { if (LOCAL_MODE) return; tx({type:'listRooms'}); }
+function joinById(id) { if (LOCAL_MODE) return joinOnline(id); tx({type:'joinRoom',roomId:id}); }
 function renderRooms(rooms) {
   const el=document.getElementById('roomListEl');
   if(!rooms.length){el.innerHTML='<div style="opacity:.4;text-align:center;padding:8px;font-size:.83rem">No open rooms</div>';return;}
@@ -313,7 +364,7 @@ function renderRooms(rooms) {
 }
 
 // ─── Waiting room ─────────────────────────────────────────────────────────────
-function setRoom(rid, players) { document.getElementById('roomCodeDisp').textContent=rid; updWait(players); }
+function setRoom(rid, players) { document.getElementById('roomCodeDisp').textContent=(LOCAL_MODE&&shareCode)?shareCode:rid; updWait(players); }
 function updWait(players) {
   document.getElementById('pcountDisp').textContent=players.length;
   const slots=[...players]; while(slots.length<4) slots.push(null);
