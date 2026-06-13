@@ -830,9 +830,11 @@ function startGame(room, withBots) {
   // Store base order on first game
   if (!room.basePlayerOrder) room.basePlayerOrder = [...allIds];
 
-  // Rotate seats: seatRotation determines who is dealer (East)
+  // Rotate seats: seatRotation determines who is dealer (East).
+  // Prevailing wind advances every 4 dealer rotations, capped at North (局 East→
+  // South→West→North) — matching mahjong-scoreboard's Math.min(roundWind+1, 3).
   const rotation = (room.seatRotation || 0) % 4;
-  const prevWindIdx = Math.floor((room.seatRotation || 0) / 4) % 4;
+  const prevWindIdx = Math.min(Math.floor((room.seatRotation || 0) / 4), 3);
 
   // Rotate player order so the right person is East (dealer)
   const baseOrder = room.basePlayerOrder.filter(id => allIds.includes(id));
@@ -848,7 +850,8 @@ function startGame(room, withBots) {
     room.players.filter(p => p.id.startsWith('bot-')).forEach(p => { room.game.isBot[p.id] = true; });
   }
 
-  broadcastRoom(room, { type: 'gameStarted' });
+  broadcastRoom(room, { type: 'gameStarted', windChanged: room._windChanged || null });
+  room._windChanged = null;
   sendState(room);
 
   if (room.game.isBot[room.game.currentPlayer]) {
@@ -990,23 +993,35 @@ function handleMsg(ws, player, msg) {
     return;
   }
 
-  if (type === 'newGame') {
+  // Advance the dealer/round per scoreboard rules, then either re-deal
+  // immediately ('nextRound') or return everyone to the waiting room ('newGame').
+  if (type === 'nextRound' || type === 'newGame') {
     const room2 = rooms.get(player.roomId);
     if (!room2 || !room2.game) return;
+    // Only the host (first human, who created the room) controls round flow.
+    if (room2.players[0] && room2.players[0].id !== player.id) return;
 
-    // Rotate dealer if non-dealer won
+    const oldWindIdx = Math.min(Math.floor((room2.seatRotation || 0) / 4), 3);
+    // Non-dealer win rotates the deal; dealer win / draw keeps the dealer (莊).
     if (room2.game.winner && room2.game.winner !== 'draw') {
       const dealerPid = room2.game.players[0]; // East is always first in rotated order
-      if (room2.game.winner !== dealerPid) {
-        room2.seatRotation = (room2.seatRotation || 0) + 1;
-      }
+      if (room2.game.winner !== dealerPid) room2.seatRotation = (room2.seatRotation || 0) + 1;
     }
 
-    room2.players = room2.players.filter(p => !p.id.startsWith('bot-'));
-    if (room2.basePlayerOrder) room2.basePlayerOrder = room2.basePlayerOrder.filter(id => !id.startsWith('bot-'));
-    room2.state = 'waiting';
-    room2.game = null;
-    broadcastRoom(room2, { type: 'gameReset', players: room2.players.map(p => ({ id: p.id, name: p.name })), seatRotation: room2.seatRotation || 0 });
+    if (type === 'nextRound') {
+      // Keep the SAME players (incl. bots with stable IDs) so the dealer truly
+      // rotates among them; just re-deal the next hand.
+      const newWindIdx = Math.min(Math.floor((room2.seatRotation || 0) / 4), 3);
+      room2._windChanged = (newWindIdx !== oldWindIdx) ? WINDS[newWindIdx] : null;
+      startGame(room2, true);
+    } else {
+      // Full reset back to the waiting room — drop bots so seats can refill.
+      room2.players = room2.players.filter(p => !p.id.startsWith('bot-'));
+      if (room2.basePlayerOrder) room2.basePlayerOrder = room2.basePlayerOrder.filter(id => !id.startsWith('bot-'));
+      room2.state = 'waiting';
+      room2.game = null;
+      broadcastRoom(room2, { type: 'gameReset', players: room2.players.map(p => ({ id: p.id, name: p.name })), seatRotation: room2.seatRotation || 0 });
+    }
     return;
   }
 

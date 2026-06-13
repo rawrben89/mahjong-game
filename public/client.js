@@ -3,7 +3,7 @@
 let ws, myId, myName = '', roomId = null, isHost = false;
 let G = null, prevG = null, selTile = null;
 let lastDrawnTileId = null, prevHandIds = new Set();
-let unreadCount = 0, chatOpen = true;
+let unreadCount = 0, chatOpen = true, pendingWindBanner = null;
 let phaserGame = null;
 let soundEnabled = true;
 
@@ -283,7 +283,10 @@ function onMsg(m) {
 
     case 'gameStarted':
       document.getElementById('winScreen').style.display='none';
-      clearChat(); showSc('gameScreen'); initPhaser();
+      // Keep chat across rounds; only wipe it for a brand-new table
+      if (!G) clearChat();
+      showSc('gameScreen'); initPhaser();
+      if (m.windChanged) pendingWindBanner = m.windChanged;
       break;
 
     case 'gameState': {
@@ -304,6 +307,11 @@ function onMsg(m) {
       }
       if (window.phaserScene) window.phaserScene.refresh(G);
       renderActions();
+      // Round-wind change announcement (East→South→West→North)
+      if (pendingWindBanner && window.phaserScene) {
+        const w=pendingWindBanner; pendingWindBanner=null;
+        setTimeout(()=>{ if(window.phaserScene) window.phaserScene.showCallBanner(`${WL[w]} Round`, `${WE[w]} Prevailing wind is now ${WL[w]}`, '#ffd700'); }, 400);
+      }
       // Let the win call banner play out before covering it with the win screen
       if (G.winner) { const fresh=!prev?.winner; setTimeout(()=>{ if(G&&G.winner) showWin(G); }, fresh&&G.winner!=='draw'?1500:0); }
       if (G.phase==='draw' && G.currentPlayer===myId && !G.winner) {
@@ -588,9 +596,12 @@ function showWin(g) {
   let tbl='<tr><td colspan="2" style="font-weight:700;padding-bottom:6px;color:#fff">This Hand — Points</td></tr>';
   sorted.forEach(p=>{const pts=g.scores[p.id]||0;const col=pts>0?'#5dfc8b':pts<0?'#e74c3c':'#ff9ecd';tbl+=`<tr class="${p.id===g.winner?'winner-row':''}"><td>${esc(p.name)}${p.id===myId?' (You)':''}${p.isBot?' 🤖':''}</td><td style="color:${col}">${pts>0?'+':''}${pts}</td></tr>`;});
   document.getElementById('stbl').innerHTML=tbl;
+  // Only the host advances the round; others wait.
+  document.getElementById('nextRoundBtn').style.display = isHost ? 'block' : 'none';
+  document.getElementById('nextHint').style.display = isHost ? 'none' : 'block';
   document.getElementById('winScreen').style.display='flex';
 }
-function requestNewGame(){tx({type:'newGame'}); document.getElementById('winScreen').style.display='none';}
+function requestNextRound(){ tx({type:'nextRound'}); document.getElementById('winScreen').style.display='none'; }
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 document.getElementById('chatIn').addEventListener('keydown',e=>{if(e.key==='Enter')sendChat();});

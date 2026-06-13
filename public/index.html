@@ -333,9 +333,10 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
     <div id="scoreDetail" class="score-detail"></div>
     <div class="sep"></div>
     <table class="stbl" id="stbl"></table>
+    <div id="nextHint" class="inf" style="display:none">⏳ Waiting for the host to start the next round…</div>
     <div class="btn-row" style="margin-top:4px">
-      <button onclick="requestNewGame()">🔄 New Game</button>
-      <button class="sec" onclick="leaveRoom()">🚪 Leave</button>
+      <button id="nextRoundBtn" onclick="requestNextRound()">▶ Next Round</button>
+      <button class="sec" onclick="confirmLeave()">🚪 Leave</button>
     </div>
   </div>
 </div>
