@@ -387,6 +387,26 @@ function showRules() {
 }
 function hideRules() { document.getElementById('rulesOvl').style.display='none'; }
 
+// ─── In-game scoreboard ───────────────────────────────────────────────────────
+function showScores() {
+  if (!G) return;
+  const pw = G.prevailingWind || 'east';
+  document.getElementById('scoresSub').textContent =
+    `${WL[pw]} Round · Hand ${G.round||1} · ${G.wallCount} tiles left`;
+  const sorted = [...G.players].sort((a,b)=>(G.scores[b.id]||0)-(G.scores[a.id]||0));
+  document.getElementById('scoresTbl').innerHTML = sorted.map((p,i)=>{
+    const pts = G.scores[p.id]||0;
+    const col = pts>0?'#5dfc8b':pts<0?'#e74c3c':'#ccc';
+    const wind = G.seatWinds[p.id];
+    const medal = i===0?'🥇 ':i===1?'🥈 ':i===2?'🥉 ':'';
+    const cur = p.id===G.currentPlayer ? ' style="color:#ffd700"' : '';
+    return `<tr><td${cur}><span class="wind-pill wp-${wind}">${WL[wind]}</span>${medal}${esc(p.name)}${p.id===myId?' (You)':''}${p.isBot?' 🤖':''}</td>`+
+      `<td style="text-align:right;font-weight:800;color:${col}">${pts>0?'+':''}${pts}</td></tr>`;
+  }).join('');
+  document.getElementById('scoresOvl').style.display='block';
+}
+function hideScores() { document.getElementById('scoresOvl').style.display='none'; }
+
 function confirmLeave() { document.getElementById('leaveOvl').style.display='block'; }
 function cancelLeave() { document.getElementById('leaveOvl').style.display='none'; }
 function leaveRoom() {
@@ -396,11 +416,27 @@ function leaveRoom() {
 }
 function copyCode() {
   const code=document.getElementById('roomCodeDisp').textContent;
-  navigator.clipboard.writeText(code).then(()=>{
+  const flash=()=>{
     const b=document.getElementById('copyCodeBtn'); const orig=b.textContent;
     b.textContent='Copied!'; b.style.background='rgba(255,158,205,.35)';
     setTimeout(()=>{b.textContent=orig; b.style.background='';},2000);
-  }).catch(()=>{});
+  };
+  // navigator.clipboard needs a secure context (HTTPS/localhost); on a LAN IP
+  // over http it's undefined, so fall back to a hidden textarea + execCommand.
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(code).then(flash).catch(()=>fallbackCopy(code,flash));
+  } else {
+    fallbackCopy(code, flash);
+  }
+}
+function fallbackCopy(text, onOk) {
+  try {
+    const ta=document.createElement('textarea');
+    ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    const ok=document.execCommand('copy'); document.body.removeChild(ta);
+    if (ok) onOk(); else prompt('Copy this room code:', text);
+  } catch { prompt('Copy this room code:', text); }
 }
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
@@ -535,6 +571,15 @@ function initPhaser() {
     scene: GameScene,
     input: { touch: { capture: false } },
   });
+  // Chrome mobile shows/hides the URL bar, which resizes the visual viewport
+  // without always firing window 'resize' — sync Phaser to it so the board
+  // never gets clipped or letterboxed.
+  if (window.visualViewport && !window.__vvHooked) {
+    window.__vvHooked = true;
+    const sync = () => { if (phaserGame) { phaserGame.scale.refresh(); if (G && window.phaserScene) window.phaserScene.refresh(G); } };
+    window.visualViewport.addEventListener('resize', sync);
+    window.addEventListener('orientationchange', () => setTimeout(sync, 250));
+  }
 }
 function destroyPhaser(){if(phaserGame){phaserGame.destroy(true);phaserGame=null;window.phaserScene=null;}}
 
@@ -886,8 +931,12 @@ class GameScene extends Phaser.Scene {
     let contentH;
     let tw,th;
     if (pos==='west'||pos==='east') {
+      const narrow=this.scale.width<480;
       const remH0=zone.h-hdrH-pad-bonusH-pad;
-      tw=Math.max(12,Math.min(20,Math.floor((remH0*0.7)/Math.max(1,hsz))-2));
+      // Narrow screens: smaller tiles + lower fill so the side columns stay
+      // short and don't stretch the whole table vertically.
+      const cap=narrow?14:20, fill=narrow?0.5:0.7;
+      tw=Math.max(narrow?10:12,Math.min(cap,Math.floor((remH0*fill)/Math.max(1,hsz))-2));
       th=Math.round(tw*1.21);
       const mw=Math.min(tw,18);
       const meldsH=melds.reduce((s,m)=>s+m.tiles.length*mw+(m.tiles.length-1)*2+8,0);
@@ -967,11 +1016,14 @@ class GameScene extends Phaser.Scene {
     const statusY=z.y+z.h-22;
 
     // ── Live wall: compact ring of face-down tiles centered on the table ──
+    const narrow=this.scale.width<480;
     const availH=statusY-8-(z.y+pad);
-    const ringW=Math.min(z.w-pad*2, Math.max(260, Math.round(availH*1.5)));
-    const ringH=Math.round(availH*0.94);
+    const ringW=Math.min(z.w-pad*2, Math.max(narrow?210:260, Math.round(availH*1.5)));
+    // Keep the ring roughly square so it frames the pool instead of stretching
+    // tall on narrow portrait screens.
+    const ringH=Math.min(Math.round(availH*0.94), Math.round(ringW*0.96));
     const ringX=z.x+(z.w-ringW)/2, ringY=z.y+pad+Math.round((availH-ringH)/2);
-    const wt=12, wh=Math.round(wt*1.21), wgap=2;
+    const wt=narrow?9:12, wh=Math.round(wt*1.21), wgap=2;
     const cornerPad=wh+6;
     const topN=Math.max(4,Math.floor((ringW-2*cornerPad)/(wt+wgap)));
     const sideN=Math.max(4,Math.floor((ringH-2*cornerPad)/(wt+wgap)));
@@ -1004,7 +1056,7 @@ class GameScene extends Phaser.Scene {
     if (pool.length && poolH>20) {
       // Largest tile size that fits the whole pool, floor 12px; trim oldest if even that overflows
       const dgap=2;
-      let dw = z.w<480 ? 24 : 40; // phones: keep the pool compact
+      let dw = z.w<480 ? 30 : 40; // phones: compact but readable
       for (; dw>12; dw-=2) {
         const dh=Math.round(dw*1.21);
         if (Math.floor((poolW+dgap)/(dw+dgap)) * Math.floor((poolH+dgap)/(dh+dgap)) >= pool.length) break;
