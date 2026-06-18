@@ -35,7 +35,14 @@ html,body{width:100%;height:100%;height:100dvh;overflow:hidden;overscroll-behavi
 .screen.active{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:20px}
 #gameScreen.active{display:flex;flex-direction:row;padding:0;gap:0;overflow:hidden}
 
-.card{position:relative;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.045));border:1px solid rgba(255,255,255,.15);border-radius:20px;padding:28px;width:min(420px,94vw);display:flex;flex-direction:column;gap:12px;box-shadow:0 24px 60px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.12);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);animation:cardin .45s cubic-bezier(.2,.9,.3,1.2) both}
+.card{position:relative;background:linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,.05));border:2px solid rgba(255,255,255,.18);border-radius:30px;padding:30px 28px;width:min(420px,94vw);display:flex;flex-direction:column;gap:12px;box-shadow:0 26px 64px rgba(0,0,0,.5),inset 0 2px 0 rgba(255,255,255,.16);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);animation:cardin .5s cubic-bezier(.34,1.56,.64,1) both}
+
+/* Chibi mascot trio (inline-SVG cuties) on the menu cards */
+.chibi-row{display:flex;justify-content:center;align-items:flex-end;gap:10px;margin:2px 0 4px}
+.chibi{width:48px;height:auto;filter:drop-shadow(0 4px 6px rgba(0,0,0,.4));animation:chibibob 2.8s ease-in-out infinite;transform-origin:50% 100%}
+.chibi:nth-child(2){animation-delay:.45s}
+.chibi:nth-child(3){animation-delay:.9s}
+@keyframes chibibob{0%,100%{transform:translateY(0) rotate(-3deg) scale(1,1)}50%{transform:translateY(-7px) rotate(3deg) scale(1.04,.97)}}
 .card::before{content:'';position:absolute;top:0;left:18%;right:18%;height:2px;background:linear-gradient(90deg,transparent,#ff9ecd,#c98fff,transparent);border-radius:2px}
 @keyframes cardin{from{opacity:0;transform:translateY(14px) scale(.97)}}
 .card h1{font-size:2.3rem;text-align:center;background:linear-gradient(90deg,#fff 0%,#ffd1e6 50%,#cbb3ff 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:1px;font-weight:900;margin-top:2px}
@@ -53,7 +60,7 @@ html,body{width:100%;height:100%;height:100dvh;overflow:hidden;overscroll-behavi
   background:linear-gradient(180deg,#ff4d4d 0%,#d62828 55%,#a51d1d 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
   filter:drop-shadow(0 1px 0 rgba(255,255,255,.6))}
 .logo-emblem.sm .logo-glyph{font-size:2.7rem}
-@keyframes emblemFloat{0%,100%{transform:translateY(0) rotate(-1.5deg)}50%{transform:translateY(-6px) rotate(1.5deg)}}
+@keyframes emblemFloat{0%,100%{transform:translateY(0) rotate(-2.5deg) scale(1,1)}50%{transform:translateY(-8px) rotate(2.5deg) scale(1.05,.96)}}
 
 input{padding:11px 15px;border-radius:13px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.07);color:#fff;font-size:.95rem;outline:none;width:100%}
 input::placeholder{opacity:.38}
@@ -280,8 +287,10 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
   <div class="card">
     <div class="logo-emblem"><span class="logo-glyph">中</span></div>
     <h1>HK Mahjong</h1>
-    <div class="deco-tiles">
-      <img src="assets/tiles/f1.svg" alt=""><img src="assets/tiles/d1.svg" alt=""><img src="assets/tiles/w5.svg" alt=""><img src="assets/tiles/s1.svg" alt=""><img src="assets/tiles/t5.svg" alt=""><img src="assets/tiles/d2.svg" alt=""><img src="assets/tiles/h5.svg" alt="">
+    <div class="chibi-row">
+      <svg class="chibi" viewBox="0 0 48 54"><circle cx="24" cy="22" r="19" fill="#ff9ecd"/><circle cx="24" cy="29" r="16" fill="#ffe1c4"/><circle cx="14" cy="15" r="6.5" fill="#ff9ecd"/><circle cx="24" cy="12" r="7.5" fill="#ff9ecd"/><circle cx="34" cy="15" r="6.5" fill="#ff9ecd"/><circle cx="17" cy="31" r="4.3" fill="#2a2336"/><circle cx="31" cy="31" r="4.3" fill="#2a2336"/><circle cx="18.5" cy="29.4" r="1.7" fill="#fff"/><circle cx="32.5" cy="29.4" r="1.7" fill="#fff"/><circle cx="11.5" cy="35" r="2.7" fill="#ff9ecd" opacity=".6"/><circle cx="36.5" cy="35" r="2.7" fill="#ff9ecd" opacity=".6"/><path d="M20 38 Q24 41.5 28 38" stroke="#9c5a4a" stroke-width="1.7" fill="none" stroke-linecap="round"/></svg>
+      <svg class="chibi" viewBox="0 0 48 54"><circle cx="24" cy="22" r="19" fill="#c98fff"/><circle cx="24" cy="29" r="16" fill="#ffe1c4"/><circle cx="13" cy="16" r="6.5" fill="#c98fff"/><circle cx="24" cy="11.5" r="8" fill="#c98fff"/><circle cx="35" cy="16" r="6.5" fill="#c98fff"/><circle cx="17" cy="31" r="4.5" fill="#2a2336"/><circle cx="31" cy="31" r="4.5" fill="#2a2336"/><circle cx="18.6" cy="29.3" r="1.8" fill="#fff"/><circle cx="32.6" cy="29.3" r="1.8" fill="#fff"/><circle cx="11.5" cy="35" r="2.7" fill="#ff9ecd" opacity=".6"/><circle cx="36.5" cy="35" r="2.7" fill="#ff9ecd" opacity=".6"/><path d="M19.5 38 Q24 42 28.5 38" stroke="#9c5a4a" stroke-width="1.7" fill="none" stroke-linecap="round"/></svg>
+      <svg class="chibi" viewBox="0 0 48 54"><circle cx="24" cy="22" r="19" fill="#7fd1ff"/><circle cx="24" cy="29" r="16" fill="#ffe1c4"/><circle cx="14" cy="15" r="6.5" fill="#7fd1ff"/><circle cx="24" cy="12" r="7.5" fill="#7fd1ff"/><circle cx="34" cy="15" r="6.5" fill="#7fd1ff"/><circle cx="17" cy="31" r="4.3" fill="#2a2336"/><circle cx="31" cy="31" r="4.3" fill="#2a2336"/><circle cx="18.5" cy="29.4" r="1.7" fill="#fff"/><circle cx="32.5" cy="29.4" r="1.7" fill="#fff"/><circle cx="11.5" cy="35" r="2.7" fill="#ff9ecd" opacity=".6"/><circle cx="36.5" cy="35" r="2.7" fill="#ff9ecd" opacity=".6"/><path d="M20 38 Q24 41.5 28 38" stroke="#9c5a4a" stroke-width="1.7" fill="none" stroke-linecap="round"/></svg>
     </div>
     <p style="text-align:center;opacity:.55;font-size:.88rem">麻雀 · Multiplayer · Bots · Hong Kong Rules</p>
     <div class="sep"></div>
@@ -298,6 +307,10 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
     <div class="logo-emblem sm"><span class="logo-glyph">中</span></div>
     <h1>Mahjong</h1>
     <div style="text-align:center;opacity:.65;font-size:.88rem">Hello, <span id="myNameDisp" style="color:#ff9ecd;font-weight:700"></span>!</div>
+    <div class="chibi-row" style="margin-top:0">
+      <svg class="chibi" style="width:42px" viewBox="0 0 48 54"><circle cx="24" cy="22" r="19" fill="#ff9ecd"/><circle cx="24" cy="29" r="16" fill="#ffe1c4"/><circle cx="14" cy="15" r="6.5" fill="#ff9ecd"/><circle cx="24" cy="12" r="7.5" fill="#ff9ecd"/><circle cx="34" cy="15" r="6.5" fill="#ff9ecd"/><circle cx="17" cy="31" r="4.3" fill="#2a2336"/><circle cx="31" cy="31" r="4.3" fill="#2a2336"/><circle cx="18.5" cy="29.4" r="1.7" fill="#fff"/><circle cx="32.5" cy="29.4" r="1.7" fill="#fff"/><circle cx="11.5" cy="35" r="2.7" fill="#ff9ecd" opacity=".6"/><circle cx="36.5" cy="35" r="2.7" fill="#ff9ecd" opacity=".6"/><path d="M20 38 Q24 41.5 28 38" stroke="#9c5a4a" stroke-width="1.7" fill="none" stroke-linecap="round"/></svg>
+      <svg class="chibi" style="width:42px" viewBox="0 0 48 54"><circle cx="24" cy="22" r="19" fill="#7fd1ff"/><circle cx="24" cy="29" r="16" fill="#ffe1c4"/><circle cx="14" cy="15" r="6.5" fill="#7fd1ff"/><circle cx="24" cy="12" r="7.5" fill="#7fd1ff"/><circle cx="34" cy="15" r="6.5" fill="#7fd1ff"/><circle cx="17" cy="31" r="4.3" fill="#2a2336"/><circle cx="31" cy="31" r="4.3" fill="#2a2336"/><circle cx="18.5" cy="29.4" r="1.7" fill="#fff"/><circle cx="32.5" cy="29.4" r="1.7" fill="#fff"/><circle cx="11.5" cy="35" r="2.7" fill="#ff9ecd" opacity=".6"/><circle cx="36.5" cy="35" r="2.7" fill="#ff9ecd" opacity=".6"/><path d="M20 38 Q24 41.5 28 38" stroke="#9c5a4a" stroke-width="1.7" fill="none" stroke-linecap="round"/></svg>
+    </div>
     <div class="local-only inf" style="display:none">🎴 Create a room to play vs bots, or share your room code so friends can join online!</div>
     <div class="sep"></div>
     <button onclick="createRoom()">🏠 Create New Room</button>
