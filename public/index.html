@@ -199,8 +199,20 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
 @keyframes tilein{from{transform:translateY(16px) scale(.55);opacity:0}}
 .confetti{position:absolute;top:-16px;width:9px;height:14px;border-radius:2px;animation:confall linear forwards;pointer-events:none;z-index:301}
 @keyframes confall{to{transform:translateY(108vh) rotate(740deg);opacity:.65}}
-.wincard{background:#1a1033;border:2px solid #f1c40f;border-radius:20px;padding:28px;max-width:500px;width:92vw;text-align:center;display:flex;flex-direction:column;gap:13px;max-height:90vh;overflow-y:auto}
-.wincard h2{font-size:1.9rem;color:#f1c40f}
+/* Sweeping light rays behind the win card */
+.win-rays{position:absolute;top:50%;left:50%;width:170vmax;height:170vmax;transform:translate(-50%,-50%);pointer-events:none;opacity:0;transition:opacity .7s;
+  background:repeating-conic-gradient(from 0deg,rgba(255,215,0,.11) 0deg 7deg,transparent 7deg 18deg);
+  -webkit-mask-image:radial-gradient(closest-side,#000 12%,transparent 72%);mask-image:radial-gradient(closest-side,#000 12%,transparent 72%);
+  animation:rayspin 26s linear infinite}
+.win-rays.on{opacity:1}
+@keyframes rayspin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+/* Burst sparkles */
+.wsparkle{position:absolute;pointer-events:none;z-index:302;font-size:18px;color:#fff;text-shadow:0 0 8px #ffd700,0 0 14px #ffd700;animation:wspark 1.5s ease-out forwards}
+@keyframes wspark{0%{transform:scale(0) rotate(0);opacity:0}18%{opacity:1}100%{transform:scale(1.4) rotate(150deg);opacity:0}}
+.wincard{position:relative;z-index:1;background:#1a1033;border:2px solid #f1c40f;border-radius:20px;padding:28px;max-width:500px;width:92vw;text-align:center;display:flex;flex-direction:column;gap:13px;max-height:90vh;overflow-y:auto;box-shadow:0 0 50px rgba(241,196,15,.25),0 24px 60px rgba(0,0,0,.6)}
+.wincard h2{font-size:1.9rem;color:#f1c40f;text-shadow:0 0 18px rgba(241,196,15,.6),0 2px 4px rgba(0,0,0,.5)}
+#winIco{filter:drop-shadow(0 0 18px rgba(255,215,0,.55));animation:winpop .6s cubic-bezier(.2,1.5,.4,1) both}
+@keyframes winpop{0%{transform:scale(0) rotate(-25deg)}60%{transform:scale(1.22)}100%{transform:scale(1)}}
 .win-hand{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;padding:4px 0}
 .win-tile{display:inline-flex;align-items:center;justify-content:center;width:38px;height:46px;background:#fffef2;border-radius:5px;font-size:22px;color:#111;overflow:hidden;position:relative;border-bottom:3px solid #cfc8ab;box-shadow:0 4px 9px rgba(0,0,0,.55),0 1px 2px rgba(0,0,0,.4)}
 .win-tile img{width:100%;height:100%;display:block}
@@ -427,6 +439,7 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
 
 <!-- ── Win screen ─────────────────────────────────────────────────────────── -->
 <div id="winScreen">
+  <div class="win-rays" id="winRays"></div>
   <div class="wincard">
     <div id="winIco" style="font-size:3.5rem"></div>
     <h2 id="winMsg"></h2>

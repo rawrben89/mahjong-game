@@ -805,8 +805,10 @@ function showWin(g) {
   document.getElementById('winHand').innerHTML=hh;
   // Staggered tile reveal
   [...document.querySelectorAll('#winHand .win-tile')].forEach((el,i)=>{ el.style.animationDelay=(i*45)+'ms'; });
-  // Confetti burst for real wins
-  document.querySelectorAll('#winScreen .confetti').forEach(el=>el.remove());
+  // Confetti + light rays + sparkle burst for real wins
+  document.querySelectorAll('#winScreen .confetti, #winScreen .wsparkle').forEach(el=>el.remove());
+  const raysEl=document.getElementById('winRays');
+  if(raysEl) raysEl.classList.toggle('on', !isDraw);
   if(!isDraw){
     const colors=['#ff8fc7','#ffd700','#c98fff','#5dde8b','#ffffff','#ff6b81'];
     const wsEl=document.getElementById('winScreen');
@@ -819,6 +821,18 @@ function showWin(g) {
       c.style.transform=`rotate(${Math.random()*360}deg)`;
       wsEl.appendChild(c);
       setTimeout(()=>c.remove(),5000);
+    }
+    // Twinkling star sparkles around the card
+    const stars=['✦','✧','⭐','✨','＊'];
+    for(let i=0;i<18;i++){
+      const s=document.createElement('div'); s.className='wsparkle';
+      s.textContent=stars[i%stars.length];
+      s.style.left=Math.random()*100+'%';
+      s.style.top=Math.random()*100+'%';
+      s.style.fontSize=(13+Math.random()*16)+'px';
+      s.style.animationDelay=(Math.random()*1.1)+'s';
+      wsEl.appendChild(s);
+      setTimeout(()=>s.remove(),3000);
     }
   }
   if(!isDraw&&g.winScore){
@@ -967,7 +981,49 @@ class GameScene extends Phaser.Scene {
     window.phaserScene = this;
     this.scale.on('resize', () => { if (G) this.refresh(G); });
     this.createPetals();
+    this.createBokeh();
     if (G) this.refresh(G);
+  }
+
+  // ── Shared FX textures (radial glow + anime speed-lines), built once ──
+  ensureGlow() {
+    if (this.textures.exists('glow')) return;
+    const S=256, c=this.textures.createCanvas('glow',S,S), ctx=c.context;
+    const g=ctx.createRadialGradient(S/2,S/2,0,S/2,S/2,S/2);
+    g.addColorStop(0,'rgba(255,255,255,1)'); g.addColorStop(0.4,'rgba(255,255,255,0.5)');
+    g.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=g; ctx.fillRect(0,0,S,S); c.refresh();
+  }
+  ensureSpeedLines() {
+    if (this.textures.exists('speedlines')) return;
+    const S=512, c=this.textures.createCanvas('speedlines',S,S), ctx=c.context, cx=S/2, cy=S/2;
+    ctx.clearRect(0,0,S,S); ctx.lineCap='round';
+    const N=72;
+    for (let i=0;i<N;i++){
+      const a=(i/N)*Math.PI*2 + (Math.random()-0.5)*0.05;
+      const inR=S*0.21+Math.random()*S*0.06, outR=S*0.5;
+      const grd=ctx.createLinearGradient(cx+Math.cos(a)*inR,cy+Math.sin(a)*inR,cx+Math.cos(a)*outR,cy+Math.sin(a)*outR);
+      grd.addColorStop(0,'rgba(255,255,255,0)'); grd.addColorStop(1,`rgba(255,255,255,${0.45+Math.random()*0.55})`);
+      ctx.strokeStyle=grd; ctx.lineWidth=1+Math.random()*6;
+      ctx.beginPath(); ctx.moveTo(cx+Math.cos(a)*inR,cy+Math.sin(a)*inR); ctx.lineTo(cx+Math.cos(a)*outR,cy+Math.sin(a)*outR); ctx.stroke();
+    }
+    c.refresh();
+  }
+
+  // ── Drifting bokeh / light-motes layer (persistent, atmospheric) ──
+  createBokeh() { this.ensureGlow(); for (let i=0;i<10;i++) this.spawnBokeh(true); }
+  spawnBokeh(initial) {
+    const W=this.scale.width, H=this.scale.height;
+    const tints=[0xff9ecd,0xc98fff,0xffe27a,0x8fd3ff];
+    const sz=14+Math.random()*30;
+    const b=this.add.image(Math.random()*W, initial?Math.random()*H:H+20,'glow')
+      .setDepth(145).setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(tints[(Math.random()*tints.length)|0])
+      .setAlpha(0.05+Math.random()*0.1).setDisplaySize(sz,sz);
+    const drift=()=>{ if(!b.scene) return; b.y=this.scale.height+20; b.x=Math.random()*this.scale.width;
+      this.tweens.add({targets:b,y:-24,x:b.x+(Math.random()*120-60),duration:14000+Math.random()*10000,onComplete:drift}); };
+    this.tweens.add({targets:b, y:-24, x:b.x+(Math.random()*100-50),
+      duration: initial ? (b.y/Math.max(1,H))*20000+4000 : 14000+Math.random()*10000, onComplete:drift});
   }
 
   // ── Sakura petals (persistent layer, not cleared on refresh) ──
@@ -1002,22 +1058,50 @@ class GameScene extends Phaser.Scene {
   showCallBanner(jp, sub, color='#ff5577') {
     const W=this.scale.width, H=this.scale.height;
     const cy=H*0.40;
+    this.ensureSpeedLines(); this.ensureGlow();
+    const tintC=Phaser.Display.Color.HexStringToColor(color).color;
+    const diag=Math.hypot(W,H);
+
+    // (1) White impact flash
+    const flash=this.add.graphics().setDepth(188);
+    flash.fillStyle(0xffffff,1); flash.fillRect(0,0,W,H); flash.alpha=0;
+    this.tweens.add({targets:flash,alpha:{from:0.55,to:0},duration:240,ease:'Cubic.easeOut'});
+
+    // (2) Radial speed-lines bursting outward (集中線)
+    const lines=this.add.image(W/2,cy,'speedlines').setDepth(189)
+      .setBlendMode(Phaser.BlendModes.ADD).setAlpha(0).setAngle(Math.random()*360);
+    lines.setDisplaySize(diag*2.4,diag*2.4);
+    const fullSc=lines.scaleX; lines.setScale(fullSc*0.5);
+    this.tweens.add({targets:lines,scaleX:fullSc,scaleY:fullSc,duration:640,ease:'Cubic.easeOut'});
+    this.tweens.add({targets:lines,alpha:{from:0.5,to:0},duration:600,ease:'Cubic.easeOut'});
+    this.tweens.add({targets:lines,angle:lines.angle+10,duration:900});
+
+    // (3) Coloured glow halo behind the text
+    const glow=this.add.image(W/2,cy-2,'glow').setDepth(189.5).setTint(tintC)
+      .setBlendMode(Phaser.BlendModes.ADD).setAlpha(0).setDisplaySize(W*0.95,H*0.55);
+    this.tweens.add({targets:glow,alpha:{from:0.8,to:0},duration:900,ease:'Cubic.easeOut'});
+
+    // (4) Dark band, tinted by the call colour
     const band=this.add.graphics().setDepth(190).setAlpha(0);
-    band.fillStyle(0x000000,0.55); band.fillRect(0,cy-40,W,80);
-    band.fillStyle(0xffffff,0.10); band.fillRect(0,cy-40,W,2); band.fillRect(0,cy+38,W,2);
-    const fs=Math.min(56, Math.max(34, Math.floor(W/9)));
-    const t=this.add.text(W/2,cy-6,jp,{fontFamily:FONT,fontSize:fs+'px',fontStyle:'900',color,
-      stroke:'#ffffff',strokeThickness:7,resolution:2,
-      shadow:{offsetX:0,offsetY:3,color:'#000000',blur:10,fill:true}})
-      .setOrigin(0.5).setDepth(191).setScale(2.4).setAlpha(0).setAngle(-4);
-    const s=this.add.text(W/2,cy+fs*0.52,sub,{fontFamily:FONT,fontSize:'14px',color:'#ffffff',
-      stroke:'#000000',strokeThickness:3,resolution:2}).setOrigin(0.5,0).setDepth(191).setAlpha(0);
-    const all=[band,t,s];
+    band.fillStyle(0x000000,0.45); band.fillRect(0,cy-42,W,84);
+    band.fillStyle(tintC,0.16); band.fillRect(0,cy-42,W,84);
+    band.fillStyle(0xffffff,0.14); band.fillRect(0,cy-42,W,2); band.fillRect(0,cy+40,W,2);
     this.tweens.add({targets:band,alpha:1,duration:120});
-    this.tweens.add({targets:t,scale:1,alpha:1,duration:170,ease:'Cubic.easeIn',
-      onComplete:()=>{ this.cameras.main.shake(90,0.004);
+
+    // (5) Big title — punches in over-scaled + tilted, then settles with a wobble
+    const fs=Math.min(60, Math.max(36, Math.floor(W/8.5)));
+    const t=this.add.text(W/2,cy-6,jp,{fontFamily:FONT,fontSize:fs+'px',fontStyle:'900',color,
+      stroke:'#ffffff',strokeThickness:8,resolution:2,
+      shadow:{offsetX:0,offsetY:4,color:'#000000',blur:12,fill:true}})
+      .setOrigin(0.5).setDepth(192).setScale(3).setAlpha(0).setAngle(-8);
+    const s=this.add.text(W/2,cy+fs*0.52,sub,{fontFamily:FONT,fontSize:'14px',color:'#ffffff',
+      stroke:'#000000',strokeThickness:3,resolution:2}).setOrigin(0.5,0).setDepth(192).setAlpha(0);
+    const all=[band,t,s,glow,lines,flash];
+    this.tweens.add({targets:t,scale:1,alpha:1,angle:-3,duration:180,ease:'Back.easeOut',
+      onComplete:()=>{ this.cameras.main.shake(150,0.009);
+        this.tweens.add({targets:t,angle:{from:-3,to:2},duration:150,yoyo:true});
         this.tweens.add({targets:s,alpha:1,duration:150});
-        this.tweens.add({targets:all,alpha:0,duration:380,delay:950,
+        this.tweens.add({targets:all,alpha:0,duration:380,delay:1000,
           onComplete:()=>all.forEach(o=>{try{o.destroy();}catch{}})});
       }});
   }
@@ -1042,6 +1126,35 @@ class GameScene extends Phaser.Scene {
     return {dx:0, dy:-mag};
   }
 
+  // ── Anime-style avatar (drawn, no external art) ──
+  // Chibi face tinted by the seat-wind accent, or a robot head for bots.
+  drawAvatar(ax, ay, ar, { accent=0x888888, isBot=false, seed=0 }) {
+    const g=this.add.graphics(); this.track(g);
+    if (isBot) {
+      // Rounded metal head with a glowing visor + antenna
+      g.fillStyle(0x9fb0c8,1); g.fillRoundedRect(ax-ar*0.92,ay-ar*0.88,ar*1.84,ar*1.8,ar*0.45);
+      g.fillStyle(0xc6d2e4,0.55); g.fillRoundedRect(ax-ar*0.92,ay-ar*0.88,ar*1.84,ar*0.7,{tl:ar*0.45,tr:ar*0.45,bl:0,br:0});
+      g.lineStyle(1.3,0xffffff,0.45); g.strokeRoundedRect(ax-ar*0.92,ay-ar*0.88,ar*1.84,ar*1.8,ar*0.45);
+      g.fillStyle(0x10202f,1); g.fillRoundedRect(ax-ar*0.66,ay-ar*0.16,ar*1.32,ar*0.62,ar*0.26);
+      g.fillStyle(accent,1); g.fillCircle(ax-ar*0.3,ay+ar*0.15,ar*0.13); g.fillCircle(ax+ar*0.3,ay+ar*0.15,ar*0.13);
+      g.lineStyle(1.3,0x9fb0c8,1); g.lineBetween(ax,ay-ar*0.88,ax,ay-ar*1.28);
+      g.fillStyle(accent,1); g.fillCircle(ax,ay-ar*1.33,ar*0.17);
+      return;
+    }
+    // Chibi: hair cap (accent) + skin face + big eyes + blush
+    g.fillStyle(accent,1); g.fillCircle(ax,ay,ar);                 // hair
+    g.fillStyle(0xffe1c4,1); g.fillCircle(ax,ay+ar*0.27,ar*0.83);  // face (reveals fringe + side hair)
+    if (seed%2===0){ // cute ahoge strand on some seats
+      g.lineStyle(Math.max(1,ar*0.16),accent,1);
+      g.beginPath(); g.moveTo(ax,ay-ar*0.92); g.lineTo(ax+ar*0.2,ay-ar*1.28); g.strokePath();
+    }
+    const ey=ay+ar*0.32, ex=ar*0.34, er=ar*0.18;
+    g.fillStyle(0x2a2336,1); g.fillCircle(ax-ex,ey,er); g.fillCircle(ax+ex,ey,er);
+    g.fillStyle(0xffffff,0.92); g.fillCircle(ax-ex+er*0.4,ey-er*0.4,er*0.42); g.fillCircle(ax+ex+er*0.4,ey-er*0.4,er*0.42);
+    g.fillStyle(0xff9ecd,0.5); g.fillEllipse(ax-ex*1.25,ey+er*1.5,ar*0.32,ar*0.18); g.fillEllipse(ax+ex*1.25,ey+er*1.5,ar*0.32,ar*0.18);
+    g.lineStyle(1.1,0x000000,0.16); g.strokeCircle(ax,ay,ar);
+  }
+
   // ── Player nameplate header (avatar + name + score) ──
   // Returns nothing; draws into the header strip [z.x, z.y, z.w, hdrH].
   drawNameplate(z, hdrH, { wind, name, score, isCur, isBot, me }) {
@@ -1051,15 +1164,17 @@ class GameScene extends Phaser.Scene {
     hbg.fillStyle(0x000000, isCur?0.34:0.22); hbg.fillRoundedRect(z.x,z.y,z.w,hdrH,{tl:8,tr:8,bl:0,br:0});
     if (isCur){ hbg.fillStyle(accent,0.22); hbg.fillRoundedRect(z.x,z.y,z.w,hdrH,{tl:8,tr:8,bl:0,br:0}); }
     hbg.fillStyle(accent,0.9); hbg.fillRoundedRect(z.x,z.y,3.5,hdrH,{tl:8,tr:0,bl:0,br:0});
-    // Avatar: seat-wind coloured disc with the wind initial
-    const ar=hdrH*0.36, ax=z.x+5+ar, ay=z.y+hdrH/2;
-    const av=this.add.graphics(); this.track(av);
-    av.fillStyle(accent,1); av.fillCircle(ax,ay,ar);
-    av.lineStyle(1.5,0xffffff,0.5); av.strokeCircle(ax,ay,ar);
-    av.fillStyle(0xffffff,0.18); av.fillEllipse(ax,ay-ar*0.4,ar*1.4,ar*0.7);
-    this.txt(ax,ay,WIND_INI[wind]||'?',{fontSize:`${Math.round(ar*1.1)}px`,fontStyle:'bold',color:'#ffffff',resolution:2}).setOrigin(0.5);
+    // Avatar: anime-style chibi face (or robot for bots), tinted by seat wind
+    const ar=hdrH*0.36, ax=z.x+6+ar, ay=z.y+hdrH/2;
+    this.drawAvatar(ax,ay,ar,{accent,isBot,seed:['east','south','west','north'].indexOf(wind)});
+    // Small seat-wind badge so the wind is still identifiable
+    const br=ar*0.6, bx=ax+ar*0.72, by=ay+ar*0.74;
+    const bdg=this.add.graphics(); this.track(bdg);
+    bdg.fillStyle(0x140b28,0.92); bdg.fillCircle(bx,by,br);
+    bdg.lineStyle(1,accent,0.95); bdg.strokeCircle(bx,by,br);
+    this.txt(bx,by,WIND_INI[wind]||'?',{fontSize:`${Math.round(br*1.35)}px`,fontStyle:'bold',color:'#ffffff',resolution:2}).setOrigin(0.5);
     // Name
-    const nm=(isBot?'🤖 ':'')+(name||'').slice(0,me?14:9);
+    const nm=(name||'').slice(0,me?14:9);
     this.txt(ax+ar+5,ay,nm,{fontSize:'11px',fontStyle:isCur?'bold':'normal',color:isCur?'#ffffff':'#d7cde8',resolution:2}).setOrigin(0,0.5);
     // Score (right)
     const sc=(score>0?'+':'')+score, scCol=score>0?'#7dffa6':score<0?'#ff7676':'#cbb8e8';
@@ -1116,6 +1231,13 @@ class GameScene extends Phaser.Scene {
     const container = this.add.container(x+w/2, y+h/2);
     if (angle) container.setAngle(angle);
     this.track(container);
+    // Soft golden glow behind a selected tile (anime "chosen" pop)
+    if (selected) {
+      this.ensureGlow();
+      const gl=this.add.image(0,0,'glow').setTint(0xffe27a).setBlendMode(Phaser.BlendModes.ADD)
+        .setAlpha(0.55).setDisplaySize(w*2.1,h*1.9);
+      container.add(gl);
+    }
     const g = this.add.graphics();
     const r = Math.max(3, Math.round(w*0.11));
     const texKey = !faceDown && tile ? tileTexKey(tile) : null;
@@ -1327,8 +1449,12 @@ class GameScene extends Phaser.Scene {
     const bg=this.add.graphics(); this.track(bg);
     // Lacquer frame with gold + sakura inlay
     bg.lineStyle(7,0x1c0f38,0.95); bg.strokeRoundedRect(3,3,W-6,H-6,10);
+    bg.lineStyle(5,0xff9ecd,0.08); bg.strokeRoundedRect(8,8,W-16,H-16,9); // soft neon bloom
     bg.lineStyle(2,0xd4af37,0.65); bg.strokeRoundedRect(8,8,W-16,H-16,9);
-    bg.lineStyle(1,0xff9ecd,0.3); bg.strokeRoundedRect(11,11,W-22,H-22,8);
+    // Breathing pink neon rim
+    const neon=this.add.graphics().setDepth(2); this.track(neon);
+    neon.lineStyle(2,0xff9ecd,0.6); neon.strokeRoundedRect(11,11,W-22,H-22,8);
+    this.tweens.add({targets:neon,alpha:{from:0.6,to:0.18},duration:1900,yoyo:true,repeat:-1,ease:'Sine.easeInOut'});
   }
 
   // ── Info bar ──
