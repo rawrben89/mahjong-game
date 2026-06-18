@@ -360,19 +360,33 @@ const voiceMembers = new Set(); // host: peer ids currently on voice (incl. host
 const voiceCalls = {};          // peerId -> PeerJS MediaConnection
 const voiceAudios = {};         // peerId -> <audio> element
 const voiceNames = {};          // peerId -> display name (for "who's talking")
-// ── Speaking detection (Web Audio) — drives the live mic meter + indicators ──
+const voicePCs = {};            // WS mode: playerId -> RTCPeerConnection
+const RTC_CFG = PEER_OPTS.config; // reuse the same STUN/TURN ice servers
+// ── Speaking detection ──
+// Self mic level uses a Web Audio AnalyserNode (the local mic always decodes).
+// Remote "who's talking" reads WebRTC's own inbound audioLevel via getStats()
+// — AnalyserNode on a *remote* stream is unreliable across browsers, but the
+// RTP audio level is standardized and works in Chrome/Safari/Firefox alike.
 let voiceAC = null;             // shared AudioContext (lazy, created on user gesture)
-const voiceMeters = {};         // peerId -> {analyser, buf, level, talkUntil}
 let voiceSelfMeter = null;      // {analyser, buf, level} for our own mic
+const voiceRemoteLevels = {};   // peerId -> latest inbound audio level (0..1)
+const voiceRemoteHold = {};     // peerId -> timestamp until which we show "talking"
+const voiceRemotePkts = {};     // peerId -> last packetsReceived (detect a stalled sender)
 let voiceRAF = 0;               // requestAnimationFrame handle for the meter loop
+let voicePoll = 0;              // setInterval handle for getStats() level polling
 function voiceCtx(){ if (!voiceAC) { try { voiceAC = new (window.AudioContext||window.webkitAudioContext)(); } catch {} } if (voiceAC && voiceAC.state==='suspended') voiceAC.resume().catch(()=>{}); return voiceAC; }
 function voiceMakeMeter(stream){
   const ac = voiceCtx(); if (!ac) return null;
   try { const src = ac.createMediaStreamSource(stream); const an = ac.createAnalyser();
     an.fftSize = 512; an.smoothingTimeConstant = 0.6; src.connect(an);
-    return { src, analyser: an, buf: new Uint8Array(an.fftSize), level: 0, talkUntil: 0 };
+    // Chrome only decodes a remote WebRTC stream into Web Audio if it reaches a
+    // destination, so tap it through a muted (gain 0) node — the audible play
+    // still happens via the <audio> element; this just feeds the analyser.
+    const sink = ac.createGain(); sink.gain.value = 0; an.connect(sink); sink.connect(ac.destination);
+    return { src, analyser: an, sink, buf: new Uint8Array(an.fftSize), level: 0, talkUntil: 0 };
   } catch { return null; }
 }
+function voiceMeterDispose(m){ if (!m) return; try { m.src.disconnect(); } catch {} try { m.analyser.disconnect(); } catch {} try { m.sink.disconnect(); } catch {} }
 function voiceMeterLevel(m){ // 0..1 RMS from the time-domain buffer
   if (!m || !m.analyser) return 0;
   m.analyser.getByteTimeDomainData(m.buf);
@@ -410,10 +424,58 @@ function voiceBroadcastRoster(){
   hostConns.forEach(c => { try { c.send(JSON.stringify({ __v:'roster', ids, names })); } catch {} });
   voiceApplyRoster(ids, names); // host is part of the mesh too
 }
-// Announce our own voice on/off (host applies locally, peer tells the host)
+// Announce our own voice on/off.
+//  • WS/Workers mode: tell the server, which broadcasts the voice roster.
+//  • P2P mode: host applies locally; a peer tells the host over its data channel.
 function voiceAnnounce(on){
+  if (!LOCAL_MODE) { tx({ type: on ? 'voiceJoin' : 'voiceLeave' }); return; }
   if (netRole === 'host') { voiceSetMember(myPeerId, on); voiceBroadcastRoster(); }
   else if (netRole === 'peer') { try { ws.send(JSON.stringify({ __v: on ? 'on' : 'off', name: myName })); } catch {} }
+}
+
+// ── WS/Workers-mode voice mesh: WebRTC peer connections signalled over the WS ──
+function voiceApplyRosterWS(members){
+  const ids = (members || []).map(x => x.id);
+  (members || []).forEach(x => { if (x.name) voiceNames[x.id] = x.name; });
+  if (voiceOn) ids.forEach(id => {
+    if (id === myId || voicePCs[id]) return;
+    if (myId < id) wsVoiceConnect(id, true); // smaller id initiates to avoid glare
+  });
+  Object.keys(voicePCs).forEach(id => { if (!ids.includes(id)) voiceCleanup(id); });
+}
+function wsVoiceConnect(peerId, initiator){
+  if (voicePCs[peerId]) return voicePCs[peerId];
+  let pc;
+  try { pc = new RTCPeerConnection(RTC_CFG); } catch { return null; }
+  voicePCs[peerId] = pc;
+  if (voiceStream) voiceStream.getTracks().forEach(t => { try { pc.addTrack(t, voiceStream); } catch {} });
+  pc.onicecandidate = e => { if (e.candidate) tx({ type:'voiceSignal', to:peerId, data:{ candidate:e.candidate } }); };
+  pc.ontrack = e => voicePlay(peerId, e.streams[0]);
+  if (initiator) pc.createOffer()
+    .then(o => pc.setLocalDescription(o))
+    .then(() => tx({ type:'voiceSignal', to:peerId, data:{ sdp:pc.localDescription } }))
+    .catch(()=>{});
+  return pc;
+}
+async function voiceHandleSignal(from, data){
+  if (!from || !data) return;
+  let pc = voicePCs[from];
+  try {
+    if (data.sdp){
+      if (data.sdp.type === 'offer'){
+        if (!pc) pc = wsVoiceConnect(from, false);
+        if (!pc) return;
+        await pc.setRemoteDescription(data.sdp);
+        const ans = await pc.createAnswer();
+        await pc.setLocalDescription(ans);
+        tx({ type:'voiceSignal', to:from, data:{ sdp:pc.localDescription } });
+      } else if (data.sdp.type === 'answer' && pc){
+        await pc.setRemoteDescription(data.sdp);
+      }
+    } else if (data.candidate && pc){
+      await pc.addIceCandidate(data.candidate);
+    }
+  } catch {}
 }
 
 // Build/tear down the audio mesh from a roster of voice-enabled peer ids
@@ -442,18 +504,28 @@ function voicePlay(id, stream){
   if (!a) { a = document.createElement('audio'); a.autoplay = true; a.playsInline = true;
     (document.getElementById('voiceAudio')||document.body).appendChild(a); voiceAudios[id] = a; }
   a.srcObject = stream; a.play().catch(()=>{});
-  const m = voiceMakeMeter(stream); if (m) { voiceMeters[id] = m; voiceMeterStart(); } // light up "who's talking"
+  voiceMeterStart(); // run the meter loop / level poll so "who's talking" lights up
 }
+// The underlying RTCPeerConnection for a peer, in either transport
+function voicePeerConn(id){ return voicePCs[id] || (voiceCalls[id] && voiceCalls[id].peerConnection) || null; }
 function voiceCleanup(id){
   try { voiceCalls[id] && voiceCalls[id].close(); } catch {}
   delete voiceCalls[id];
+  try { voicePCs[id] && voicePCs[id].close(); } catch {}
+  delete voicePCs[id];
   const a = voiceAudios[id]; if (a) { try { a.srcObject = null; a.remove(); } catch {} delete voiceAudios[id]; }
-  const m = voiceMeters[id]; if (m) { try { m.src.disconnect(); } catch {} delete voiceMeters[id]; }
+  delete voiceRemoteLevels[id]; delete voiceRemoteHold[id]; delete voiceRemotePkts[id];
 }
 
 async function enableVoice(){
   if (voiceOn) return;
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { voiceToast('Mic not supported here','#e74c3c'); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    // Browsers only expose the mic in a "secure context": HTTPS or localhost.
+    // Plain HTTP on a LAN IP (e.g. 192.168.x.x:3000) silently disables it.
+    voiceToast(window.isSecureContext ? 'Mic not supported on this browser'
+                                      : 'Voice needs HTTPS — open the https:// link (or localhost)', '#e74c3c');
+    return;
+  }
   try {
     voiceStream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true } });
     voiceStream.getAudioTracks().forEach(t => t.enabled = false); // muted until PTT held
@@ -469,27 +541,52 @@ async function enableVoice(){
 }
 function voiceTeardown(){
   voiceAnnounce(false);
-  Object.keys(voiceCalls).forEach(voiceCleanup);
+  [...new Set([...Object.keys(voiceCalls), ...Object.keys(voicePCs)])].forEach(voiceCleanup);
   if (voiceStream) { try { voiceStream.getTracks().forEach(t => t.stop()); } catch {} voiceStream = null; }
-  if (voiceSelfMeter) { try { voiceSelfMeter.src.disconnect(); } catch {} voiceSelfMeter = null; }
+  if (voiceSelfMeter) { voiceMeterDispose(voiceSelfMeter); voiceSelfMeter = null; }
   voiceMeterStop();
   voiceOn = false; voiceTalking = false; voiceMembers.clear();
   updateVoiceBtn(); updateVoiceVisibility();
 }
 // ── Meter loop: drives the self mic glow + the "who's talking" indicator ──
-const VOICE_SPEAK_ON = 0.045, VOICE_SPEAK_HOLD = 350; // RMS threshold + linger (ms)
-function voiceMeterStart(){ if (!voiceRAF) voiceRAF = requestAnimationFrame(voiceMeterTick); }
-function voiceMeterStop(){ if (voiceRAF) { cancelAnimationFrame(voiceRAF); voiceRAF = 0; } voiceRenderSpeaking([]); voiceSelfGlow(0); }
+const VOICE_RTP_ON = 0.012;    // remote RTP audioLevel considered "talking"
+const VOICE_SPEAK_HOLD = 400;  // keep showing a speaker this long after they dip
+function voiceMeterStart(){
+  if (!voiceRAF) voiceRAF = requestAnimationFrame(voiceMeterTick);
+  if (!voicePoll) voicePoll = setInterval(voicePollLevels, 200);
+}
+function voiceMeterStop(){
+  if (voiceRAF) { cancelAnimationFrame(voiceRAF); voiceRAF = 0; }
+  if (voicePoll) { clearInterval(voicePoll); voicePoll = 0; }
+  voiceRenderSpeaking([]); voiceSelfGlow(0);
+}
+// Poll WebRTC for each peer's inbound audio level (cross-browser "who's talking")
+async function voicePollLevels(){
+  const ids = [...new Set([...Object.keys(voicePCs), ...Object.keys(voiceCalls)])];
+  for (const id of ids){
+    const pc = voicePeerConn(id); if (!pc || !pc.getStats) continue;
+    try {
+      const stats = await pc.getStats(); let lvl = 0, pkts = 0;
+      stats.forEach(r => { if (r.type === 'inbound-rtp' && r.kind === 'audio') {
+        if (typeof r.audioLevel === 'number') lvl = Math.max(lvl, r.audioLevel);
+        if (typeof r.packetsReceived === 'number') pkts = Math.max(pkts, r.packetsReceived);
+      } });
+      const prev = voiceRemotePkts[id] || 0; voiceRemotePkts[id] = pkts;
+      // A disabled track can freeze audioLevel at its last value; if no new
+      // packets arrived this interval, treat the peer as silent.
+      voiceRemoteLevels[id] = (pkts > prev) ? lvl : 0;
+    } catch {}
+  }
+}
 function voiceMeterTick(){
   const now = performance.now();
   // Self: live glow from your own mic, only while PTT is held
   voiceSelfGlow(voiceTalking && voiceSelfMeter ? voiceMeterLevel(voiceSelfMeter) : 0);
   // Remote peers: collect everyone currently speaking (with a short linger)
   const speaking = [];
-  for (const id in voiceMeters){
-    const m = voiceMeters[id];
-    if (voiceMeterLevel(m) >= VOICE_SPEAK_ON) m.talkUntil = now + VOICE_SPEAK_HOLD;
-    if (m.talkUntil > now) speaking.push(voiceNames[id] || 'Friend');
+  for (const id in voiceRemoteLevels){
+    if (voiceRemoteLevels[id] >= VOICE_RTP_ON) voiceRemoteHold[id] = now + VOICE_SPEAK_HOLD;
+    if ((voiceRemoteHold[id] || 0) > now) speaking.push(voiceNames[id] || 'Friend');
   }
   voiceRenderSpeaking(speaking);
   voiceRAF = requestAnimationFrame(voiceMeterTick);
@@ -510,10 +607,10 @@ function voiceRenderSpeaking(names){
 function voiceTalkStart(){ if (!voiceOn || voiceTalking) return; voiceTalking = true; if (voiceStream) voiceStream.getAudioTracks().forEach(t => t.enabled = true); updateVoiceBtn(); }
 function voiceTalkEnd(){ if (!voiceTalking) return; voiceTalking = false; if (voiceStream) voiceStream.getAudioTracks().forEach(t => t.enabled = false); updateVoiceBtn(); }
 
-// Available in any P2P online game (host or peer) — a room can gain friends at
-// any time via its code, so the host sees the mic too (it simply has no one to
-// reach until someone joins).
-function voiceCanUse(){ return LOCAL_MODE && !!netRole; }
+// Available in any online game — P2P (host or peer) OR the WS/Workers lobby.
+// A room can gain other humans at any time, so the mic shows even when you're
+// momentarily alone (it simply has no one to reach yet).
+function voiceCanUse(){ return LOCAL_MODE ? !!netRole : !!myId; }
 function updateVoiceVisibility(){
   const btn = document.getElementById('voiceBtn'); if (!btn) return;
   const show = voiceCanUse() && document.getElementById('gameScreen').classList.contains('active');
@@ -571,6 +668,10 @@ function saveSession() { sessionStorage.setItem('mjSession', JSON.stringify({nam
 function onMsg(m) {
   switch(m.type) {
     case 'welcome': myId = m.playerId; break;
+
+    // Live-voice signaling (WS/Workers mode)
+    case 'voiceRoster': voiceApplyRosterWS(m.members); break;
+    case 'voiceSignal': voiceHandleSignal(m.from, m.data); break;
 
     case 'resumed': roomId = m.roomId; if (pendingSess) isHost = !!pendingSess.isHost; saveSession(); break;
 

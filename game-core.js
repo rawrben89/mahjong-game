@@ -451,6 +451,17 @@ function broadcastRoom(room, msg) {
   room.players.forEach(p => { if (p.ws) send(p.ws, msg); });
 }
 
+// Live-voice presence: tell everyone which human players currently have voice
+// on (id + name) so clients can build the WebRTC mesh and label who's talking.
+function broadcastVoiceRoster(room) {
+  if (!room) return;
+  const members = [...(room.voice || [])]
+    .map(id => room.players.find(p => p.id === id))
+    .filter(p => p && p.ws)
+    .map(p => ({ id: p.id, name: p.name }));
+  broadcastRoom(room, { type: 'voiceRoster', members });
+}
+
 function getAvailableActions(game, pid, asDiscarder) {
   if (asDiscarder) {
     const actions = [];
@@ -1053,11 +1064,33 @@ function handleMsg(ws, player, msg) {
     const room3 = rooms.get(player.roomId);
     if (room3) {
       room3.players = room3.players.filter(p => p.id !== player.id);
+      if (room3.voice) room3.voice.delete(player.id);
       if (room3.players.length === 0 || room3.players.every(p => !p.ws)) rooms.delete(player.roomId);
-      else broadcastRoom(room3, { type: 'playerLeft', id: player.id, name: player.name, players: room3.players.map(p => ({ id: p.id, name: p.name })) });
+      else { broadcastRoom(room3, { type: 'playerLeft', id: player.id, name: player.name, players: room3.players.map(p => ({ id: p.id, name: p.name })) }); broadcastVoiceRoster(room3); }
     }
     player.roomId = null;
     send(ws, { type: 'leftRoom' });
+    return;
+  }
+
+  // ─── Live voice (WebRTC over WS) signaling — works in or out of a game ────
+  if (type === 'voiceJoin') {
+    const room = rooms.get(player.roomId);
+    if (!room) return;
+    (room.voice || (room.voice = new Set())).add(player.id);
+    broadcastVoiceRoster(room);
+    return;
+  }
+  if (type === 'voiceLeave') {
+    const room = rooms.get(player.roomId);
+    if (room && room.voice) { room.voice.delete(player.id); broadcastVoiceRoster(room); }
+    return;
+  }
+  if (type === 'voiceSignal') {
+    const room = rooms.get(player.roomId);
+    if (!room) return;
+    const target = room.players.find(p => p.id === msg.to);
+    if (target && target.ws) send(target.ws, { type: 'voiceSignal', from: player.id, data: msg.data });
     return;
   }
 
@@ -1173,6 +1206,7 @@ export function handleClose(ws) {
     const room = rooms.get(player.roomId);
     if (room) {
       const entry = room.players.find(p => p.id === player.id);
+      if (room.voice && room.voice.delete(player.id)) broadcastVoiceRoster(room);
       if (room.game && room.game.players.includes(player.id)) {
         // Mid-game: keep the seat so the player can resume after refresh/drop
         if (entry && entry.ws === ws) {

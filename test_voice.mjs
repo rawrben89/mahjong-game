@@ -36,7 +36,7 @@ const pillHost = await host.evaluate(()=>{ const e=document.getElementById('voic
 console.log('host sees talking pill while peer talks:', pillHost);
 
 await peer.evaluate(()=>voiceTalkEnd());
-await host.waitForTimeout(800);
+await host.waitForTimeout(1500); // poll interval (200ms) + speak-hold (400ms) + slack
 const pillAfter = await host.evaluate(()=>document.getElementById('voiceSpeaking').style.display);
 console.log('host pill hidden after peer stops:', pillAfter==='none');
 
