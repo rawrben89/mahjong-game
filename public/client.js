@@ -699,6 +699,9 @@ function renderActions() {
   if (!G) return;
   const bar=document.getElementById('actionOverlay');
   const acts=G.myActions||[];
+  // Hide the bottom-left corner row only when interactive claim buttons are up
+  // (not during a normal discard turn) so they never overlap on mobile.
+  document.body.classList.toggle('actions-on', acts.some(a=>a!=='discard'));
   if (!acts.length){bar.innerHTML='';return;}
   const b=[];
   if (acts.includes('win'))        b.push(`<button class="abtn win" onclick="doWin()">🏆 WIN</button>`);
