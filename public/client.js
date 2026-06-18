@@ -236,6 +236,9 @@ const LOCAL_MODE = location.hostname.endsWith('github.io') || location.protocol 
 let netRole = null;        // 'host' | 'peer' (LOCAL_MODE only)
 let shareCode = null;      // the code players share to join (LOCAL_MODE)
 let peerObj = null;        // PeerJS instance
+let myPeerId = null;       // this client's PeerJS id (for the voice mesh)
+const hostConns = new Set();// host: live data connections to peers
+let voiceHumanCount = 0;   // host: number of connected human peers
 const PEER_PREFIX = 'hkmj-';
 if (LOCAL_MODE) {
   const s1 = document.createElement('script'); s1.type='module'; s1.src='local-core.js'; document.head.appendChild(s1);
@@ -283,6 +286,8 @@ function hostOnline() {
 function startHostPeer(core){
   try {
     peerObj = new window.Peer(PEER_PREFIX + shareCode, PEER_OPTS);
+    peerObj.on('open', id => { myPeerId = id; });
+    voiceAttachPeer(peerObj);
     peerObj.on('connection', conn => hostAcceptPeer(core, conn));
     peerObj.on('error', e => {
       if (e.type==='unavailable-id') {            // code clash — pick a new one
@@ -295,15 +300,26 @@ function startHostPeer(core){
   } catch {}
 }
 function hostAcceptPeer(core, conn) {
-  conn.on('open', () => { conn._pw = { readyState:1, send: s => { try{conn.send(s);}catch{} }, close(){ try{conn.close();}catch{} } }; core.attachPlayer(conn._pw); });
+  conn.on('open', () => {
+    conn._pw = { readyState:1, send: s => { try{conn.send(s);}catch{} }, close(){ try{conn.close();}catch{} } };
+    core.attachPlayer(conn._pw);
+    hostConns.add(conn); voiceHumanCount = hostConns.size; updateVoiceVisibility();
+    voiceBroadcastRoster(); // let the newcomer learn who is already on voice
+  });
   conn.on('data', raw => {
     if (!conn._pw) return;
     let m; try { m = JSON.parse(raw); } catch { return; }
+    if (m.__v) { voiceHostSignal(conn.peer, m); return; } // voice control, not a game msg
     if (m.type==='joinRoom') m.roomId = roomId; // map share code → host's engine room
     core.handleRaw(conn._pw, JSON.stringify(m));
   });
-  conn.on('close', () => { if (conn._pw) core.handleClose(conn._pw); });
-  conn.on('error', () => { if (conn._pw) core.handleClose(conn._pw); });
+  const gone = () => {
+    if (conn._pw) core.handleClose(conn._pw);
+    hostConns.delete(conn); voiceHumanCount = hostConns.size;
+    voiceSetMember(conn.peer, false); voiceBroadcastRoster(); updateVoiceVisibility();
+  };
+  conn.on('close', gone);
+  conn.on('error', gone);
 }
 
 // ── LOCAL_MODE peer: connect to a host and talk to it like a server ──
@@ -312,7 +328,9 @@ function joinOnline(code) {
   whenLocalReady(() => {
     shareCode = code; netRole = 'peer';
     peerObj = new window.Peer(PEER_OPTS);
-    peerObj.on('open', () => {
+    voiceAttachPeer(peerObj);
+    peerObj.on('open', (id) => {
+      myPeerId = id;
       const conn = peerObj.connect(PEER_PREFIX + code, { reliable:true });
       const timer = setTimeout(() => { if (!ws) showErr('No host found for code ' + code); }, 9000);
       conn.on('open', () => {
@@ -320,12 +338,146 @@ function joinOnline(code) {
         ws = { readyState:1, send: s => { try{conn.send(s);}catch{} }, close(){ try{conn.close();}catch{} } };
         tx({type:'setName', name:myName});
         tx({type:'joinRoom', roomId:code});
+        updateVoiceVisibility();
       });
-      conn.on('data', raw => { try { onMsg(JSON.parse(raw)); } catch {} });
-      conn.on('close', () => { showErr('Disconnected from host.'); showSc('lobbyScreen'); });
+      conn.on('data', raw => { let m; try { m = JSON.parse(raw); } catch { return; }
+        if (m && m.__v==='roster') { voiceApplyRoster(m.ids); return; }
+        onMsg(m); });
+      conn.on('close', () => { voiceTeardown(); showErr('Disconnected from host.'); showSc('lobbyScreen'); });
     });
     peerObj.on('error', e => showErr('Connection failed: ' + e.type));
   });
+}
+
+// ─── Live voice (push-to-talk) for P2P online play ───────────────────────────
+// A small WebRTC audio mesh over the existing PeerJS peers. The mic stream is
+// captured once and its track stays disabled (muted) until the user holds the
+// push-to-talk button, so toggling is instant with no renegotiation.
+let voiceOn = false;            // mic captured / in the voice mesh
+let voiceTalking = false;       // PTT currently held
+let voiceStream = null;         // local mic MediaStream
+const voiceMembers = new Set(); // host: peer ids currently on voice (incl. host)
+const voiceCalls = {};          // peerId -> PeerJS MediaConnection
+const voiceAudios = {};         // peerId -> <audio> element
+
+function voiceToast(msg, col){ if (window.phaserScene && window.phaserScene.showToast) window.phaserScene.showToast(msg, col); }
+
+// Attach the incoming-call handler to a PeerJS instance (host or peer)
+function voiceAttachPeer(peer){
+  try {
+    peer.on('call', call => {
+      call.answer(voiceStream || undefined);   // share our mic (muted until PTT) or just listen
+      voiceCalls[call.peer] = call;
+      call.on('stream', rs => voicePlay(call.peer, rs));
+      call.on('close', () => voiceCleanup(call.peer));
+      call.on('error', () => voiceCleanup(call.peer));
+    });
+  } catch {}
+}
+
+// Host bookkeeping of who is on voice + broadcasting the roster to everyone
+function voiceSetMember(id, on){ if (!id) return; if (on) voiceMembers.add(id); else voiceMembers.delete(id); }
+function voiceHostSignal(peerId, m){
+  if (m.__v === 'on')  voiceSetMember(peerId, true);
+  if (m.__v === 'off') voiceSetMember(peerId, false);
+  voiceBroadcastRoster();
+}
+function voiceBroadcastRoster(){
+  if (netRole !== 'host') return;
+  const ids = [...voiceMembers];
+  hostConns.forEach(c => { try { c.send(JSON.stringify({ __v:'roster', ids })); } catch {} });
+  voiceApplyRoster(ids); // host is part of the mesh too
+}
+// Announce our own voice on/off (host applies locally, peer tells the host)
+function voiceAnnounce(on){
+  if (netRole === 'host') { voiceSetMember(myPeerId, on); voiceBroadcastRoster(); }
+  else if (netRole === 'peer') { try { ws.send(JSON.stringify({ __v: on ? 'on' : 'off' })); } catch {} }
+}
+
+// Build/tear down the audio mesh from a roster of voice-enabled peer ids
+function voiceApplyRoster(ids){
+  const others = (ids || []).filter(id => id && id !== myPeerId);
+  if (voiceOn) others.forEach(id => {
+    if (voiceCalls[id]) return;
+    // Glare avoidance: the lexicographically-smaller id places the call.
+    if (myPeerId && myPeerId < id) {
+      try {
+        const call = peerObj.call(id, voiceStream);
+        voiceCalls[id] = call;
+        call.on('stream', rs => voicePlay(id, rs));
+        call.on('close', () => voiceCleanup(id));
+        call.on('error', () => voiceCleanup(id));
+      } catch {}
+    }
+  });
+  // Drop anyone who left the roster
+  Object.keys(voiceCalls).forEach(id => { if (!ids || !ids.includes(id)) voiceCleanup(id); });
+}
+
+function voicePlay(id, stream){
+  let a = voiceAudios[id];
+  if (!a) { a = document.createElement('audio'); a.autoplay = true; a.playsInline = true;
+    (document.getElementById('voiceAudio')||document.body).appendChild(a); voiceAudios[id] = a; }
+  a.srcObject = stream; a.play().catch(()=>{});
+}
+function voiceCleanup(id){
+  try { voiceCalls[id] && voiceCalls[id].close(); } catch {}
+  delete voiceCalls[id];
+  const a = voiceAudios[id]; if (a) { try { a.srcObject = null; a.remove(); } catch {} delete voiceAudios[id]; }
+}
+
+async function enableVoice(){
+  if (voiceOn) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { voiceToast('Mic not supported here','#e74c3c'); return; }
+  try {
+    voiceStream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true } });
+    voiceStream.getAudioTracks().forEach(t => t.enabled = false); // muted until PTT held
+    voiceOn = true;
+    voiceAnnounce(true);
+    updateVoiceBtn();
+    voiceToast('🎤 Voice on — hold the mic to talk','#5dde8b');
+  } catch { voiceToast('Mic permission denied','#e74c3c'); }
+}
+function voiceTeardown(){
+  voiceAnnounce(false);
+  Object.keys(voiceCalls).forEach(voiceCleanup);
+  if (voiceStream) { try { voiceStream.getTracks().forEach(t => t.stop()); } catch {} voiceStream = null; }
+  voiceOn = false; voiceTalking = false; voiceMembers.clear();
+  updateVoiceBtn(); updateVoiceVisibility();
+}
+function voiceTalkStart(){ if (!voiceOn || voiceTalking) return; voiceTalking = true; if (voiceStream) voiceStream.getAudioTracks().forEach(t => t.enabled = true); updateVoiceBtn(); }
+function voiceTalkEnd(){ if (!voiceTalking) return; voiceTalking = false; if (voiceStream) voiceStream.getAudioTracks().forEach(t => t.enabled = false); updateVoiceBtn(); }
+
+// Only useful in P2P online play with at least one human on the other end
+function voiceCanUse(){ return LOCAL_MODE && (netRole === 'peer' || (netRole === 'host' && voiceHumanCount > 0)); }
+function updateVoiceVisibility(){
+  const btn = document.getElementById('voiceBtn'); if (!btn) return;
+  const show = voiceCanUse() && document.getElementById('gameScreen').classList.contains('active');
+  btn.style.display = show ? 'flex' : 'none';
+  if (show) updateVoiceBtn();
+  if (!show && voiceOn) voiceTeardown();
+}
+function updateVoiceBtn(){
+  const btn = document.getElementById('voiceBtn'); if (!btn) return;
+  btn.classList.toggle('off', !voiceOn);
+  btn.classList.toggle('ready', voiceOn && !voiceTalking);
+  btn.classList.toggle('live', voiceTalking);
+  const label = !voiceOn ? 'Tap for voice' : voiceTalking ? 'Talking…' : 'Hold to talk';
+  btn.title = label;
+  const lab = btn.querySelector('.vlabel'); if (lab) lab.textContent = label;
+}
+// Wire the push-to-talk button + spacebar once
+function voiceInitButton(){
+  const btn = document.getElementById('voiceBtn'); if (!btn || btn._wired) return; btn._wired = true;
+  const down = e => { e.preventDefault(); if (!voiceOn) { enableVoice(); return; } voiceTalkStart(); };
+  const up   = e => { e.preventDefault(); voiceTalkEnd(); };
+  btn.addEventListener('pointerdown', down);
+  btn.addEventListener('pointerup', up);
+  btn.addEventListener('pointercancel', up);
+  btn.addEventListener('pointerleave', up);
+  // Spacebar = push-to-talk on desktop (when voice is enabled and in-game)
+  window.addEventListener('keydown', e => { if (e.code==='Space' && voiceOn && !e.repeat && voiceCanUse() && document.activeElement?.tagName!=='INPUT') { e.preventDefault(); voiceTalkStart(); } });
+  window.addEventListener('keyup',   e => { if (e.code==='Space' && voiceTalking) { e.preventDefault(); voiceTalkEnd(); } });
 }
 
 function connect() {
@@ -475,6 +627,7 @@ function showSc(id) {
   // The floating chat button belongs to the game only
   syncChatFab();
   syncHelpBtn();
+  updateVoiceVisibility();
   // Shared link with ?room=CODE → prefill the join box and auto-join once
   if (id==='lobbyScreen' && pendingUrlRoom && !roomId) {
     const code=pendingUrlRoom; pendingUrlRoom=null;
@@ -1856,6 +2009,7 @@ class GameScene extends Phaser.Scene {
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 { const fab=document.getElementById('chatFloatBtn'); if(fab) fab.style.display='none'; } // game-only
 syncHintSeg(); // reflect the persisted "Help me play" setting in the waiting-room toggle
+voiceInitButton(); // wire the push-to-talk button (P2P voice)
 // First-time players get the how-to-play walkthrough automatically (once)
 try { if(!localStorage.getItem('mj_seen_tutorial')) setTimeout(showTutorial, 500); } catch {}
 connect();

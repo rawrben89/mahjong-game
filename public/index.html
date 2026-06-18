@@ -150,6 +150,13 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
 /* Floating chat button (all screen sizes, in-game) */
 .chat-float-btn{position:fixed;bottom:14px;right:14px;z-index:50;background:#ff9ecd;color:#2a1040;border:none;border-radius:50%;width:46px;height:46px;font-size:1.2rem;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;transition:transform .14s}
 .chat-float-btn:hover{transform:scale(1.1)}
+/* Push-to-talk voice button */
+.voice-btn{position:fixed;right:14px;bottom:70px;z-index:50;width:58px;height:58px;border-radius:50%;border:2px solid rgba(255,255,255,.3);background:rgba(40,30,70,.88);color:#fff;font-size:1.45rem;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 12px rgba(0,0,0,.5);transition:transform .12s,box-shadow .12s,background .12s;touch-action:none;-webkit-user-select:none;user-select:none}
+.voice-btn .vlabel{position:absolute;top:-15px;left:50%;transform:translateX(-50%);font-size:.58rem;font-weight:700;white-space:nowrap;color:#cbb8e8;text-shadow:0 1px 2px #000;pointer-events:none}
+.voice-btn.off{opacity:.9}
+.voice-btn.ready{background:linear-gradient(180deg,#3a8f5a,#256b3f);border-color:rgba(120,255,170,.5)}
+.voice-btn.live{background:linear-gradient(180deg,#37d87a,#1f9e57);border-color:#aaffcc;transform:scale(1.1);animation:voicepulse 1s infinite}
+@keyframes voicepulse{0%,100%{box-shadow:0 0 0 4px rgba(55,216,122,.35),0 0 18px rgba(55,216,122,.55)}50%{box-shadow:0 0 0 10px rgba(55,216,122,.1),0 0 28px rgba(55,216,122,.75)}}
 .chat-unread{position:absolute;top:-2px;right:-2px;background:#e74c3c;color:#fff;font-size:.62rem;font-weight:700;border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center}
 
 /* ── In-game corner buttons (bottom-left) ───────────────────────────────── */
@@ -404,6 +411,10 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
 <button class="chat-float-btn" id="chatFloatBtn" onclick="openMobileChat()">
   💬<span class="chat-unread" id="chatUnread" style="display:none">0</span>
 </button>
+
+<!-- Push-to-talk voice (P2P online) -->
+<button id="voiceBtn" class="voice-btn off" style="display:none">🎤<span class="vlabel">Hold to talk</span></button>
+<div id="voiceAudio" aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden"></div>
 
 <!-- ── In-game scoreboard ─────────────────────────────────────────────────── -->
 <div id="scoresOvl" style="display:none">
