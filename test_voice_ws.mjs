@@ -25,14 +25,19 @@ const hBtn = await host.evaluate(()=>document.getElementById('voiceBtn').style.d
 const pBtn = await peer.evaluate(()=>document.getElementById('voiceBtn').style.display);
 console.log('voice btn visible — host:', hBtn, 'peer:', pBtn);
 
+// PRE-WARM: the mesh should already be negotiated at game start, before anyone
+// taps the mic (this is what removes the connect delay when enabling voice).
+const warm = await host.evaluate(()=>({ warm:voiceWarm, on:voiceOn, states:Object.values(voicePCs).map(p=>p.connectionState) }));
+console.log('host pre-warm BEFORE enabling mic:', JSON.stringify(warm), '→ connected w/o mic:', warm.warm && !warm.on && warm.states.includes('connected'));
+
 await host.evaluate(()=>enableVoice()); await peer.evaluate(()=>enableVoice());
-await host.waitForTimeout(3500); // let the WebRTC mesh negotiate over WS
+await host.waitForTimeout(800); // mic only needs replaceTrack onto the warm mesh
 
 const conn = await host.evaluate(()=>Object.fromEntries(Object.entries(voicePCs).map(([k,v])=>[k,v.connectionState])));
 console.log('host RTC connection states:', conn);
 
 await peer.evaluate(()=>voiceTalkStart());
-await host.waitForTimeout(1500);
+await host.waitForTimeout(800);
 const pill = await host.evaluate(()=>{ const e=document.getElementById('voiceSpeaking'); return {disp:e.style.display, txt:e.textContent}; });
 console.log('host sees talking pill while peer talks:', pill);
 

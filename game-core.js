@@ -1093,6 +1093,13 @@ function handleMsg(ws, player, msg) {
     if (target && target.ws) send(target.ws, { type: 'voiceSignal', from: player.id, data: msg.data });
     return;
   }
+  if (type === 'voiceTalk') {
+    const room = rooms.get(player.roomId);
+    if (!room) return;
+    // Push-to-talk state → tell everyone else so they can show "X is talking"
+    room.players.forEach(p => { if (p.ws && p.id !== player.id) send(p.ws, { type: 'voiceTalk', id: player.id, name: player.name, on: !!msg.on }); });
+    return;
+  }
 
   // ─── In-game actions ──────────────────────────────────────────────────────
   const room = rooms.get(player.roomId);
