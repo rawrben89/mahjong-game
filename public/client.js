@@ -534,13 +534,31 @@ function setRoom(rid, players) {
   setUrlRoom(code);
   updWait(players);
 }
+// Cute chibi face / robot head as inline SVG (for the waiting-room player chips)
+const SEAT_HAIR=['#ff9ecd','#7fd1ff','#ffd76a','#9be38b'];
+function chibiSVG(hair,size=34){
+  return `<svg width="${size}" height="${size}" viewBox="0 0 48 54" style="flex:none;animation:chibibob 2.8s ease-in-out infinite;transform-origin:50% 100%">`+
+    `<circle cx="24" cy="22" r="19" fill="${hair}"/><circle cx="24" cy="29" r="16" fill="#ffe1c4"/>`+
+    `<circle cx="14" cy="15" r="6.5" fill="${hair}"/><circle cx="24" cy="12" r="7.5" fill="${hair}"/><circle cx="34" cy="15" r="6.5" fill="${hair}"/>`+
+    `<circle cx="17" cy="31" r="4.3" fill="#2a2336"/><circle cx="31" cy="31" r="4.3" fill="#2a2336"/>`+
+    `<circle cx="18.5" cy="29.4" r="1.7" fill="#fff"/><circle cx="32.5" cy="29.4" r="1.7" fill="#fff"/>`+
+    `<circle cx="11.5" cy="35" r="2.7" fill="#ff9ecd" opacity=".6"/><circle cx="36.5" cy="35" r="2.7" fill="#ff9ecd" opacity=".6"/>`+
+    `<path d="M20 38 Q24 41.5 28 38" stroke="#9c5a4a" stroke-width="1.7" fill="none" stroke-linecap="round"/></svg>`;
+}
+function robotSVG(size=34){
+  return `<svg width="${size}" height="${size}" viewBox="0 0 48 54" style="flex:none;animation:chibibob 3.1s ease-in-out infinite;transform-origin:50% 100%">`+
+    `<rect x="8" y="15" width="32" height="30" rx="12" fill="#9fb0c8"/><rect x="8" y="15" width="32" height="12" rx="11" fill="#c6d2e4" opacity=".55"/>`+
+    `<rect x="13" y="27" width="22" height="11" rx="5" fill="#10202f"/>`+
+    `<circle cx="19" cy="32.5" r="3" fill="#8fd3ff"/><circle cx="29" cy="32.5" r="3" fill="#8fd3ff"/>`+
+    `<circle cx="11" cy="40" r="2.3" fill="#ff9ecd" opacity=".5"/><circle cx="37" cy="40" r="2.3" fill="#ff9ecd" opacity=".5"/>`+
+    `<line x1="24" y1="15" x2="24" y2="8" stroke="#9fb0c8" stroke-width="2"/><circle cx="24" cy="6.5" r="3" fill="#8fd3ff"/></svg>`;
+}
 function updWait(players) {
   document.getElementById('pcountDisp').textContent=players.length;
   const slots=[...players]; while(slots.length<4) slots.push(null);
   document.getElementById('waitPlayers').innerHTML=slots.map((p,i)=>{
-    const windImg=`<img src="assets/tiles/f${i+1}.svg" style="width:22px;height:27px" alt="${WL[WINDS_ARR[i]]}">`;
-    if(!p) return `<div class="pchip" style="opacity:.32">${windImg}<span style="flex:1">Empty <span class="bot-badge">Bot</span></span><span style="opacity:.5;font-size:.78rem">${WL[WINDS_ARR[i]]}</span></div>`;
-    return `<div class="pchip">${windImg}<span style="flex:1">${esc(p.name)}${p.id===myId?' (You)':''}</span><span style="opacity:.5;font-size:.78rem">${WL[WINDS_ARR[i]]}</span></div>`;
+    if(!p) return `<div class="pchip" style="opacity:.45">${robotSVG(34)}<span style="flex:1">Empty <span class="bot-badge">Bot</span></span><span style="opacity:.5;font-size:.78rem">${WL[WINDS_ARR[i]]}</span></div>`;
+    return `<div class="pchip">${chibiSVG(SEAT_HAIR[i]||'#ff9ecd',34)}<span style="flex:1">${esc(p.name)}${p.id===myId?' (You)':''}</span><span style="opacity:.5;font-size:.78rem">${WL[WINDS_ARR[i]]}</span></div>`;
   }).join('');
   isHost=players.length>0&&players[0].id===myId;
   document.getElementById('startBtn').style.display=isHost?'block':'none';
@@ -1637,16 +1655,6 @@ class GameScene extends Phaser.Scene {
     tray.lineStyle(1.5,0xffd166,0.28); tray.strokeRoundedRect(poolX-5,poolY-5,poolW+10,poolH+10,11);
     tray.lineStyle(1,0xff9ecd,0.16); tray.strokeRoundedRect(poolX-2,poolY-2,poolW+4,poolH+4,9);
 
-    // Remaining-wall counter — a centred watermark drawn BEHIND the discards, so
-    // the pool stays the clear foreground (still readable when the pool is sparse).
-    const wc=g.wallCount||0;
-    const cdR=Math.max(17,Math.min(ringW,ringH)*0.145);
-    const cd=this.add.graphics(); this.track(cd);
-    cd.fillStyle(0x140b28,0.4); cd.fillCircle(ecx,ecy,cdR*1.3);
-    cd.lineStyle(1.5,0xffd166,0.28); cd.strokeCircle(ecx,ecy,cdR*1.3);
-    this.txt(ecx,ecy-cdR*0.26,`${wc}`,{fontSize:`${Math.round(cdR*1.05)}px`,fontStyle:'900',color:'#ffe27a',resolution:2,stroke:'#3a1f00',strokeThickness:3}).setOrigin(0.5).setAlpha(0.9);
-    this.txt(ecx,ecy+cdR*0.6,'left',{fontSize:`${Math.max(8,Math.round(cdR*0.4))}px`,color:'#ffd1e6',resolution:2}).setOrigin(0.5).setAlpha(0.85);
-
     const pool=g.allDiscards||[];
     if (pool.length && poolH>20) {
       // Largest tile size that fits the whole pool, floor 16px; trim oldest if even that overflows
@@ -1696,6 +1704,20 @@ class GameScene extends Phaser.Scene {
       const sbg=this.add.graphics(); this.track(sbg);
       sbg.fillStyle(0x000000,0.35); sbg.fillRoundedRect(z.x+6,statusY-2,z.w-12,20,5);
       this.txt(cx,statusY+8,statusTxt,{fontSize:'11px',color:statusCol,align:'center'}).setOrigin(0.5,0.5);
+    }
+
+    // ── Remaining-wall counter — top-right corner, fully outside the table centre ──
+    {
+      const sw=L.sideW, topY=L.infoH, botY=(L.east&&L.east.y)||z.y;
+      const bw=Math.min(sw-8,68), bh=Math.min(Math.max(botY-topY-10,46),62);
+      const bx=L.W-bw-5, by=topY+6, mid=bx+bw/2;
+      const wb=this.add.graphics().setDepth(8); this.track(wb);
+      wb.fillStyle(0x140b28,0.75); wb.fillRoundedRect(bx,by,bw,bh,13);
+      wb.lineStyle(1.5,0xffd166,0.5); wb.strokeRoundedRect(bx,by,bw,bh,13);
+      wb.lineStyle(1,0xff9ecd,0.3); wb.strokeRoundedRect(bx+2,by+2,bw-4,bh-4,11);
+      const tc=this.drawTile(mid-9,by+5,null,{w:18,h:22,faceDown:true}); tc.setDepth(9);
+      this.txt(mid,by+bh-16,`${g.wallCount||0}`,{fontSize:'18px',fontStyle:'900',color:'#ffe27a',resolution:2,stroke:'#3a1f00',strokeThickness:3}).setOrigin(0.5).setDepth(10);
+      this.txt(mid,by+bh-4,'left',{fontSize:'9px',color:'#ffd1e6',resolution:2}).setOrigin(0.5).setDepth(10);
     }
   }
 
