@@ -126,6 +126,7 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
 .leave-btn:hover{background:rgba(231,76,60,.32);border-color:rgba(231,76,60,.6);color:#fff;transform:none;box-shadow:none}
 .scores-btn:hover{background:rgba(255,158,205,.28);border-color:rgba(255,158,205,.6);color:#fff;transform:none;box-shadow:none}
 .emote-btn:hover{background:rgba(57,216,255,.24);border-color:rgba(57,216,255,.6);color:#fff;transform:none;box-shadow:none}
+.help-btn:hover{background:rgba(255,215,0,.22);border-color:rgba(255,215,0,.6);color:#fff;transform:none;box-shadow:none}
 #emoteBar{position:absolute;left:8px;bottom:118px;z-index:13;display:none;flex-wrap:wrap;gap:4px;max-width:212px;padding:8px;border-radius:14px;background:rgba(20,12,40,.92);border:1px solid rgba(255,158,205,.35);box-shadow:0 8px 28px rgba(0,0,0,.5);animation:emotePop .16s ease-out}
 #emoteBar button{width:38px;height:38px;padding:0;font-size:1.3rem;line-height:1;border-radius:10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);box-shadow:none;text-shadow:none;cursor:pointer;transition:transform .08s,background .12s}
 #emoteBar button:hover{background:rgba(57,216,255,.22);transform:scale(1.18)}
@@ -268,6 +269,13 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
         <button class="seg-btn" data-lvl="hard" onclick="setBotLevel('hard')">Hard</button>
       </div>
     </div>
+    <div id="hintRow" style="margin-top:6px">
+      <div style="font-size:.78rem;opacity:.6;text-align:center;margin-bottom:5px">💡 Help me play <span style="opacity:.55">— hints &amp; best discard</span></div>
+      <div class="seg" id="hintSeg">
+        <button class="seg-btn on" data-h="off" onclick="setHints(false)">Off</button>
+        <button class="seg-btn" data-h="on" onclick="setHints(true)">On</button>
+      </div>
+    </div>
     <div style="font-size:.78rem;opacity:.55;text-align:center">Empty seats fill with bots when host starts.</div>
     <button id="startBtn" onclick="startGame()" style="margin-top:4px">▶ Start Game (fill with bots)</button>
     <button class="sec" onclick="confirmLeave()">← Leave Room</button>
@@ -281,6 +289,7 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
     <div id="phaserMount"></div>
     <div class="corner-btns">
       <button class="scores-btn" id="scoresBtn" onclick="showScores()" title="Scoreboard">📊<span class="btn-label"> Scores</span></button>
+      <button class="help-btn" id="helpBtn" onclick="requestHelp()" title="Show a hint for this turn" style="display:none">💡<span class="btn-label"> Help</span></button>
       <button class="emote-btn" id="emoteBtn" onclick="toggleEmotes()" title="Send a reaction">😄<span class="btn-label"> React</span></button>
       <button class="leave-btn" id="leaveBtn" onclick="confirmLeave()" title="Leave game">🚪<span class="btn-label"> Leave</span></button>
     </div>

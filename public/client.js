@@ -407,6 +407,8 @@ function onMsg(m) {
       if (!(m.myActions||[]).includes('discard') || !(m.myHand||[]).some(t=>t.id===selTile)) {
         selTile = null;
       }
+      // A one-time Help tip lasts only for the current discard turn
+      if (!(m.myActions||[]).includes('discard')) helpOnce = false;
       prevG = prev; G = m;
       detectEvents(prev, m);
       if (!document.getElementById('gameScreen').classList.contains('active')) {
@@ -441,7 +443,7 @@ function onMsg(m) {
       break;
 
     case 'leftRoom':
-      roomId=null; isHost=false; G=null; saveSession(); destroyPhaser(); showSc('lobbyScreen'); refreshRooms();
+      roomId=null; isHost=false; G=null; setUrlRoom(null); saveSession(); destroyPhaser(); showSc('lobbyScreen'); refreshRooms();
       break;
 
     case 'matchOver': showMatchOver(m); break;
@@ -472,6 +474,13 @@ function showSc(id) {
   const pet=document.getElementById('petals'); if(pet) pet.style.display = (id==='gameScreen')?'none':'block';
   // The floating chat button belongs to the game only
   syncChatFab();
+  syncHelpBtn();
+  // Shared link with ?room=CODE → prefill the join box and auto-join once
+  if (id==='lobbyScreen' && pendingUrlRoom && !roomId) {
+    const code=pendingUrlRoom; pendingUrlRoom=null;
+    const ci=document.getElementById('codeIn'); if(ci) ci.value=code;
+    setTimeout(()=>{ if(!roomId) joinCode(); }, 120);
+  }
 }
 // Show the floating chat button only in-game AND when the chat panel is closed,
 // so it never overlaps the message box / Send button.
@@ -509,7 +518,22 @@ function renderRooms(rooms) {
 }
 
 // ─── Waiting room ─────────────────────────────────────────────────────────────
-function setRoom(rid, players) { document.getElementById('roomCodeDisp').textContent=(LOCAL_MODE&&shareCode)?shareCode:rid; updWait(players); }
+// Reflect the room code in the URL (?room=CODE) so the link is shareable and the
+// code stays visible through the game. Preserves any other query params (e.g. local=1).
+function setUrlRoom(code){
+  try{ const u=new URL(location.href);
+    if(code) u.searchParams.set('room', code); else u.searchParams.delete('room');
+    history.replaceState(null,'',u.pathname+u.search+u.hash);
+  }catch{}
+}
+let pendingUrlRoom = null;
+try { pendingUrlRoom = new URLSearchParams(location.search).get('room'); } catch {}
+function setRoom(rid, players) {
+  const code=(LOCAL_MODE&&shareCode)?shareCode:rid;
+  document.getElementById('roomCodeDisp').textContent=code;
+  setUrlRoom(code);
+  updWait(players);
+}
 function updWait(players) {
   document.getElementById('pcountDisp').textContent=players.length;
   const slots=[...players]; while(slots.length<4) slots.push(null);
@@ -528,6 +552,33 @@ function setBotLevel(lvl){
   document.querySelectorAll('#botLevelSeg .seg-btn').forEach(b=>b.classList.toggle('on', b.dataset.lvl===lvl));
 }
 function startGame() { tx({type:'startGame',withBots:true,botLevel}); }
+
+// ── Help / hints (personal, opt-in, off by default) ──
+// Persistent toggle (waiting-room seg + in-game 💡 icon) plus a per-turn Help button.
+let helpOnce = false;
+function setHints(on){
+  hintsEnabled = on; saveSetting('mj_hints', on);
+  syncHintSeg(); syncHelpBtn();
+  if (G && window.phaserScene) window.phaserScene.refresh(G);
+}
+function syncHintSeg(){
+  document.querySelectorAll('#hintSeg .seg-btn').forEach(b=>b.classList.toggle('on', (b.dataset.h==='on')===hintsEnabled));
+}
+// The in-game Help button only appears when persistent hints are OFF (otherwise redundant)
+function syncHelpBtn(){
+  const hb=document.getElementById('helpBtn'); if(!hb) return;
+  const inGame=document.getElementById('gameScreen').classList.contains('active');
+  hb.style.display = (inGame && !hintsEnabled) ? '' : 'none';
+}
+// One-time tip for the current turn (works even when persistent hints are off)
+function requestHelp(){
+  if (!G || !(G.myActions||[]).includes('discard')) {
+    if (window.phaserScene) window.phaserScene.showToast('💡 Wait for your turn to discard', '#39d8ff');
+    return;
+  }
+  helpOnce = true;
+  if (window.phaserScene) window.phaserScene.refresh(G);
+}
 // ─── Rules / Fan Table (mirrors computeFan in game-core.js, sourced from
 //     rawrben89/mahjong-scoreboard) ───────────────────────────────────────────
 const RULES = [
@@ -615,6 +666,7 @@ function leaveRoom() {
   document.getElementById('leaveOvl').style.display='none';
   document.getElementById('winScreen').style.display='none';
   document.getElementById('matchScreen').style.display='none';
+  setUrlRoom(null);
   tx({type:'leaveRoom'}); destroyPhaser();
 }
 function copyCode() {
@@ -1267,7 +1319,8 @@ class GameScene extends Phaser.Scene {
     const hnt=this.add.text(W-30,infoH/2,'💡',{fontSize:'14px'}).setOrigin(1,0.5).setDepth(50).setInteractive();
     hnt.setAlpha(hintsEnabled?1:0.32); this.track(hnt);
     hnt.on('pointerdown',()=>{ hintsEnabled=!hintsEnabled; saveSetting('mj_hints',hintsEnabled);
-      hnt.setAlpha(hintsEnabled?1:0.4); if(G&&window.phaserScene) window.phaserScene.refresh(G);
+      hnt.setAlpha(hintsEnabled?1:0.4); syncHintSeg(); syncHelpBtn();
+      if(G&&window.phaserScene) window.phaserScene.refresh(G);
       this.showToast(hintsEnabled?'💡 Hints on':'Hints off', hintsEnabled?'#39d8ff':'#aaaaaa'); });
     hnt.on('pointerover',()=>hnt.setAlpha(0.7)); hnt.on('pointerout',()=>hnt.setAlpha(hintsEnabled?1:0.32));
   }
@@ -1515,9 +1568,10 @@ class GameScene extends Phaser.Scene {
     // Hand tiles (1 row, or 2 rows on narrow screens)
     const handY_start=bonusRowY+bonusRowH;
     const canDiscard=isCur&&(g.myActions||[]).includes('discard');
-    // Optional discard hint (opt-in) — only on my discard turn, when nothing picked
+    // Optional discard hint (opt-in) — only on my discard turn, when nothing picked.
+    // Shown when persistent hints are on, or when the player tapped Help this turn.
     let hintId=null;
-    if (hintsEnabled && canDiscard && selTile==null) {
+    if ((hintsEnabled || helpOnce) && canDiscard && selTile==null) {
       const h=computeHint(hand, (g.melds[player.id]||[]).length);
       if (h) {
         hintId=h.discardId;
@@ -1569,5 +1623,6 @@ class GameScene extends Phaser.Scene {
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 { const fab=document.getElementById('chatFloatBtn'); if(fab) fab.style.display='none'; } // game-only
+syncHintSeg(); // reflect the persisted "Help me play" setting in the waiting-room toggle
 connect();
 setInterval(()=>{ if(document.getElementById('lobbyScreen').classList.contains('active')) refreshRooms(); },12000);
