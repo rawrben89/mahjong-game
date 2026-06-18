@@ -503,8 +503,17 @@ function voicePlay(id, stream){
   let a = voiceAudios[id];
   if (!a) { a = document.createElement('audio'); a.autoplay = true; a.playsInline = true;
     (document.getElementById('voiceAudio')||document.body).appendChild(a); voiceAudios[id] = a; }
-  a.srcObject = stream; a.play().catch(()=>{});
+  // iOS Safari often blocks playback of an <audio> created outside a direct tap;
+  // if play() is rejected, surface the "tap to enable audio" affordance.
+  a.srcObject = stream; a.play().then(() => voiceShowUnlock(false)).catch(() => voiceShowUnlock(true));
   voiceMeterStart(); // run the meter loop / level poll so "who's talking" lights up
+}
+// Re-attempt playback of all incoming streams from a user gesture (iOS unlock)
+function voiceShowUnlock(show){ const el = document.getElementById('voiceUnlock'); if (el) el.style.display = show ? 'flex' : 'none'; }
+function voiceUnlockAudio(){
+  if (voiceAC && voiceAC.state === 'suspended') voiceAC.resume().catch(()=>{});
+  const plays = Object.values(voiceAudios).map(a => a.play().catch(()=>'blocked'));
+  Promise.all(plays).then(rs => { if (!rs.includes('blocked')) voiceShowUnlock(false); });
 }
 // The underlying RTCPeerConnection for a peer, in either transport
 function voicePeerConn(id){ return voicePCs[id] || (voiceCalls[id] && voiceCalls[id].peerConnection) || null; }
@@ -541,6 +550,7 @@ async function enableVoice(){
 }
 function voiceTeardown(){
   voiceAnnounce(false);
+  voiceShowUnlock(false);
   [...new Set([...Object.keys(voiceCalls), ...Object.keys(voicePCs)])].forEach(voiceCleanup);
   if (voiceStream) { try { voiceStream.getTracks().forEach(t => t.stop()); } catch {} voiceStream = null; }
   if (voiceSelfMeter) { voiceMeterDispose(voiceSelfMeter); voiceSelfMeter = null; }
@@ -636,6 +646,9 @@ function voiceInitButton(){
   btn.addEventListener('pointerup', up);
   btn.addEventListener('pointercancel', up);
   btn.addEventListener('pointerleave', up);
+  // "Tap to enable audio" — iOS gesture to start blocked remote playback
+  const unlock = document.getElementById('voiceUnlock');
+  if (unlock) unlock.addEventListener('pointerdown', e => { e.preventDefault(); voiceUnlockAudio(); });
   // Spacebar = push-to-talk on desktop (when voice is enabled and in-game)
   window.addEventListener('keydown', e => { if (e.code==='Space' && voiceOn && !e.repeat && voiceCanUse() && document.activeElement?.tagName!=='INPUT') { e.preventDefault(); voiceTalkStart(); } });
   window.addEventListener('keyup',   e => { if (e.code==='Space' && voiceTalking) { e.preventDefault(); voiceTalkEnd(); } });
