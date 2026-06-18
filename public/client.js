@@ -1119,33 +1119,45 @@ class GameScene extends Phaser.Scene {
     return {dx:0, dy:-mag};
   }
 
-  // ── Anime-style avatar (drawn, no external art) ──
-  // Chibi face tinted by the seat-wind accent, or a robot head for bots.
+  // ── Chibi avatar (drawn, no external art) ──
+  // Big-headed cute face tinted by the seat-wind accent, or a chibi robot for bots.
   drawAvatar(ax, ay, ar, { accent=0x888888, isBot=false, seed=0 }) {
     const g=this.add.graphics(); this.track(g);
     if (isBot) {
-      // Rounded metal head with a glowing visor + antenna
-      g.fillStyle(0x9fb0c8,1); g.fillRoundedRect(ax-ar*0.92,ay-ar*0.88,ar*1.84,ar*1.8,ar*0.45);
-      g.fillStyle(0xc6d2e4,0.55); g.fillRoundedRect(ax-ar*0.92,ay-ar*0.88,ar*1.84,ar*0.7,{tl:ar*0.45,tr:ar*0.45,bl:0,br:0});
-      g.lineStyle(1.3,0xffffff,0.45); g.strokeRoundedRect(ax-ar*0.92,ay-ar*0.88,ar*1.84,ar*1.8,ar*0.45);
-      g.fillStyle(0x10202f,1); g.fillRoundedRect(ax-ar*0.66,ay-ar*0.16,ar*1.32,ar*0.62,ar*0.26);
-      g.fillStyle(accent,1); g.fillCircle(ax-ar*0.3,ay+ar*0.15,ar*0.13); g.fillCircle(ax+ar*0.3,ay+ar*0.15,ar*0.13);
-      g.lineStyle(1.3,0x9fb0c8,1); g.lineBetween(ax,ay-ar*0.88,ax,ay-ar*1.28);
-      g.fillStyle(accent,1); g.fillCircle(ax,ay-ar*1.33,ar*0.17);
+      // Cute rounded bot: big head, big glowing eyes, rosy cheek lights, antenna bobble
+      g.fillStyle(0x9fb0c8,1); g.fillRoundedRect(ax-ar*0.95,ay-ar*0.82,ar*1.9,ar*1.74,ar*0.6);
+      g.fillStyle(0xc6d2e4,0.5); g.fillRoundedRect(ax-ar*0.95,ay-ar*0.82,ar*1.9,ar*0.7,{tl:ar*0.6,tr:ar*0.6,bl:0,br:0});
+      g.lineStyle(1.3,0xffffff,0.4); g.strokeRoundedRect(ax-ar*0.95,ay-ar*0.82,ar*1.9,ar*1.74,ar*0.6);
+      g.fillStyle(0x10202f,1); g.fillRoundedRect(ax-ar*0.72,ay-ar*0.08,ar*1.44,ar*0.66,ar*0.33);
+      g.fillStyle(accent,1); g.fillCircle(ax-ar*0.34,ay+ar*0.26,ar*0.2); g.fillCircle(ax+ar*0.34,ay+ar*0.26,ar*0.2);
+      g.fillStyle(0xffffff,0.85); g.fillCircle(ax-ar*0.28,ay+ar*0.19,ar*0.07); g.fillCircle(ax+ar*0.4,ay+ar*0.19,ar*0.07);
+      g.fillStyle(0xff9ecd,0.4); g.fillCircle(ax-ar*0.68,ay+ar*0.46,ar*0.12); g.fillCircle(ax+ar*0.68,ay+ar*0.46,ar*0.12);
+      g.lineStyle(1.4,0x9fb0c8,1); g.lineBetween(ax,ay-ar*0.82,ax,ay-ar*1.24);
+      g.fillStyle(accent,1); g.fillCircle(ax,ay-ar*1.3,ar*0.18);
       return;
     }
-    // Chibi: hair cap (accent) + skin face + big eyes + blush
+    // Chibi: big round head, huge sparkly eyes, tiny smile, rosy cheeks
     g.fillStyle(accent,1); g.fillCircle(ax,ay,ar);                 // hair
-    g.fillStyle(0xffe1c4,1); g.fillCircle(ax,ay+ar*0.27,ar*0.83);  // face (reveals fringe + side hair)
+    g.fillStyle(0xffe1c4,1); g.fillCircle(ax,ay+ar*0.3,ar*0.86);   // face
+    // rounded fringe bumps for that soft chibi silhouette
+    g.fillStyle(accent,1);
+    g.fillCircle(ax-ar*0.44,ay-ar*0.3,ar*0.3); g.fillCircle(ax,ay-ar*0.44,ar*0.34); g.fillCircle(ax+ar*0.44,ay-ar*0.3,ar*0.3);
     if (seed%2===0){ // cute ahoge strand on some seats
       g.lineStyle(Math.max(1,ar*0.16),accent,1);
-      g.beginPath(); g.moveTo(ax,ay-ar*0.92); g.lineTo(ax+ar*0.2,ay-ar*1.28); g.strokePath();
+      g.beginPath(); g.moveTo(ax,ay-ar*0.95); g.lineTo(ax+ar*0.22,ay-ar*1.32); g.strokePath();
     }
-    const ey=ay+ar*0.32, ex=ar*0.34, er=ar*0.18;
+    // huge sparkly eyes
+    const ey=ay+ar*0.38, ex=ar*0.37, er=ar*0.28;
     g.fillStyle(0x2a2336,1); g.fillCircle(ax-ex,ey,er); g.fillCircle(ax+ex,ey,er);
-    g.fillStyle(0xffffff,0.92); g.fillCircle(ax-ex+er*0.4,ey-er*0.4,er*0.42); g.fillCircle(ax+ex+er*0.4,ey-er*0.4,er*0.42);
-    g.fillStyle(0xff9ecd,0.5); g.fillEllipse(ax-ex*1.25,ey+er*1.5,ar*0.32,ar*0.18); g.fillEllipse(ax+ex*1.25,ey+er*1.5,ar*0.32,ar*0.18);
-    g.lineStyle(1.1,0x000000,0.16); g.strokeCircle(ax,ay,ar);
+    g.fillStyle(0xffffff,0.95);
+    g.fillCircle(ax-ex+er*0.32,ey-er*0.42,er*0.46); g.fillCircle(ax+ex+er*0.32,ey-er*0.42,er*0.46); // big highlight
+    g.fillCircle(ax-ex-er*0.34,ey+er*0.36,er*0.22); g.fillCircle(ax+ex-er*0.34,ey+er*0.36,er*0.22); // sparkle
+    // rosy cheeks
+    g.fillStyle(0xff9ecd,0.55); g.fillCircle(ax-ex*1.42,ey+er*0.85,ar*0.17); g.fillCircle(ax+ex*1.42,ey+er*0.85,ar*0.17);
+    // tiny smile
+    g.lineStyle(Math.max(1,ar*0.1),0x9c5a4a,0.85);
+    g.beginPath(); g.arc(ax,ey+er*1.15,ar*0.17,0.15*Math.PI,0.85*Math.PI); g.strokePath();
+    g.lineStyle(1.1,0x000000,0.14); g.strokeCircle(ax,ay,ar);
   }
 
   // ── Player nameplate header (avatar + name + score) ──
@@ -1157,8 +1169,8 @@ class GameScene extends Phaser.Scene {
     hbg.fillStyle(0x000000, isCur?0.34:0.22); hbg.fillRoundedRect(z.x,z.y,z.w,hdrH,{tl:8,tr:8,bl:0,br:0});
     if (isCur){ hbg.fillStyle(accent,0.22); hbg.fillRoundedRect(z.x,z.y,z.w,hdrH,{tl:8,tr:8,bl:0,br:0}); }
     hbg.fillStyle(accent,0.9); hbg.fillRoundedRect(z.x,z.y,3.5,hdrH,{tl:8,tr:0,bl:0,br:0});
-    // Avatar: anime-style chibi face (or robot for bots), tinted by seat wind
-    const ar=hdrH*0.36, ax=z.x+6+ar, ay=z.y+hdrH/2;
+    // Avatar: chibi face (or robot for bots), tinted by seat wind
+    const ar=hdrH*0.40, ax=z.x+6+ar, ay=z.y+hdrH/2;
     this.drawAvatar(ax,ay,ar,{accent,isBot,seed:['east','south','west','north'].indexOf(wind)});
     // Small seat-wind badge so the wind is still identifiable
     const br=ar*0.6, bx=ax+ar*0.72, by=ay+ar*0.74;

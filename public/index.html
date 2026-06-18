@@ -23,7 +23,7 @@ html,body{width:100%;height:100%;height:100dvh;overflow:hidden;overscroll-behavi
 .deco-tiles img{width:34px;height:41px;filter:drop-shadow(0 3px 5px rgba(0,0,0,.45));animation:tilefloat 3.5s ease-in-out infinite}
 .deco-tiles img:nth-child(2n){animation-delay:.5s}
 .deco-tiles img:nth-child(3n){animation-delay:1s}
-@keyframes tilefloat{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-5px) rotate(1deg)}}
+@keyframes tilefloat{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-8px) rotate(2deg)}}
 
 /* Decorative sakura petals behind the menus */
 #petals{position:fixed;inset:0;z-index:1;pointer-events:none;overflow:hidden}
@@ -42,13 +42,13 @@ html,body{width:100%;height:100%;height:100dvh;overflow:hidden;overscroll-behavi
 .card h2{font-size:1.4rem;text-align:center}
 .card h3{font-size:.85rem;opacity:.6;margin-top:4px}
 
-input{padding:11px 15px;border-radius:8px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.07);color:#fff;font-size:.95rem;outline:none;width:100%}
+input{padding:11px 15px;border-radius:13px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.07);color:#fff;font-size:.95rem;outline:none;width:100%}
 input::placeholder{opacity:.38}
 input:focus{border-color:#ff9ecd}
 
-button{padding:11px 18px;border-radius:10px;border:1px solid rgba(255,255,255,.25);background:linear-gradient(135deg,#ff8fc7,#c98fff);color:#fff;font-family:inherit;font-weight:800;font-size:.9rem;letter-spacing:.3px;cursor:pointer;transition:all .14s;width:100%;box-shadow:0 3px 12px rgba(255,143,199,.25);text-shadow:0 1px 2px rgba(0,0,0,.25)}
-button:hover{filter:brightness(1.12);transform:translateY(-1px);box-shadow:0 5px 16px rgba(255,143,199,.4)}
-button:active{transform:none}
+button{padding:11px 18px;border-radius:16px;border:1px solid rgba(255,255,255,.25);background:linear-gradient(135deg,#ff8fc7,#c98fff);color:#fff;font-family:inherit;font-weight:800;font-size:.9rem;letter-spacing:.3px;cursor:pointer;transition:transform .16s cubic-bezier(.34,1.56,.64,1),filter .14s,box-shadow .14s;width:100%;box-shadow:0 3px 12px rgba(255,143,199,.25);text-shadow:0 1px 2px rgba(0,0,0,.25)}
+button:hover{filter:brightness(1.12);transform:translateY(-2px) scale(1.03);box-shadow:0 6px 18px rgba(255,143,199,.45)}
+button:active{transform:translateY(0) scale(.94)}
 button.sec{background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.15);box-shadow:none;text-shadow:none}
 button.sec:hover{background:rgba(255,255,255,.18);box-shadow:none}
 button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba(231,76,60,.3)}
