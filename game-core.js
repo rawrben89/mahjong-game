@@ -363,7 +363,50 @@ function dominantSuit(hand) {
   return { suit: best, count: n };
 }
 
+// Every distinct tile type (suited 1-9 + honours), for tenpai/wait scanning
+const ALL_TILE_TYPES = (() => {
+  const t = [];
+  SUITS.forEach(s => { for (let v = 1; v <= 9; v++) t.push({ suit: s, value: v }); });
+  WINDS.forEach(w => t.push({ suit: 'wind', value: w }));
+  DRAGONS.forEach(d => t.push({ suit: 'dragon', value: d }));
+  return t;
+})();
+
+// Given a concealed hand one tile short of a win (length % 3 === 1), the tile
+// types that would complete it. Skips waits with no copies left in `conc`.
+function tenpaiWaits(conc) {
+  if (conc.length % 3 !== 1) return [];
+  const waits = [];
+  for (const ty of ALL_TILE_TYPES) {
+    if (conc.filter(x => same(x, ty)).length >= 4) continue;
+    if (canWinHand([...conc, ty])) waits.push(ty);
+  }
+  return waits;
+}
+
 function botChooseDiscard(hand, level = 'medium') {
+  // Tenpai-seeking (medium/hard): prefer a discard that leaves the hand ready
+  // to win, choosing the discard with the most live waiting tiles. Easy bots
+  // stay loose and skip this. Always falls through to the heuristic below.
+  if (level !== 'easy' && hand.length % 3 === 2) {
+    const seen = new Set(); const distinct = [];
+    for (const t of hand) { const k = tileKey(t); if (!seen.has(k)) { seen.add(k); distinct.push(t); } }
+    let best = null;
+    for (const d of distinct) {
+      const i = hand.findIndex(x => same(x, d));
+      const rem = hand.filter((_, idx) => idx !== i);
+      const waits = tenpaiWaits(rem);
+      if (!waits.length) continue;
+      const live = waits.reduce((s, w) => s + (4 - hand.filter(x => same(x, w)).length), 0);
+      // Maximise live waits; tie-break by discarding the least useful tile
+      const keepScore = botScoreTile(d, hand);
+      if (!best || live > best.live || (live === best.live && keepScore < best.keepScore)) {
+        best = { tile: d, live, keepScore };
+      }
+    }
+    if (best && (level === 'hard' || Math.random() < 0.85)) return best.tile;
+  }
+
   const scored = hand.map(t => ({ t, s: botScoreTile(t, hand) }));
   if (level === 'hard') {
     // Commit to a flush when one suit clearly dominates: dump off-suit tiles
