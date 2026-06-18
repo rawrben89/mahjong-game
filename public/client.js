@@ -759,7 +759,7 @@ function renderActions() {
   if (!acts.length){bar.innerHTML='';return;}
   const b=[];
   if (acts.includes('win'))        b.push(`<button class="abtn win" onclick="doWin()">🏆 WIN</button>`);
-  if (acts.includes('pong'))       b.push(`<button class="abtn pong" onclick="doClaim('pong')">◉ PONG</button>`);
+  if (acts.includes('pong'))       b.push(`<button class="abtn pong" onclick="doClaim('pong')"><svg class="ic-pong" viewBox="0 0 30 22" aria-hidden="true"><rect x="1" y="2" width="8" height="18" rx="2.4" fill="#fff"/><rect x="11" y="2" width="8" height="18" rx="2.4" fill="#fff"/><rect x="21" y="2" width="8" height="18" rx="2.4" fill="#fff"/><rect x="1" y="15" width="8" height="5" rx="2.4" fill="#e7d8f3"/><rect x="11" y="15" width="8" height="5" rx="2.4" fill="#e7d8f3"/><rect x="21" y="15" width="8" height="5" rx="2.4" fill="#e7d8f3"/><circle cx="5" cy="9.5" r="2.2" fill="#8e44ad"/><circle cx="15" cy="9.5" r="2.2" fill="#8e44ad"/><circle cx="25" cy="9.5" r="2.2" fill="#8e44ad"/></svg>PONG</button>`);
   if (acts.includes('kong'))       b.push(`<button class="abtn kong" onclick="doClaim('kong')">◆ KONG</button>`);
   if (acts.includes('chow'))       b.push(`<button class="abtn chow" onclick="openChow()">⇗ CHOW</button>`);
   if (acts.includes('addOnKong'))  b.push(`<button class="abtn kong" onclick="doAddOnKong()">◆ ADD KONG</button>`);
