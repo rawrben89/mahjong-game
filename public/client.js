@@ -435,7 +435,9 @@ async function enableVoice(){
     voiceOn = true;
     voiceAnnounce(true);
     updateVoiceBtn();
-    voiceToast('🎤 Voice on — hold the mic to talk','#5dde8b');
+    const alone = (netRole === 'host' && voiceHumanCount === 0);
+    voiceToast(alone ? '🎤 Voice ready — friends hear you once they join'
+                     : '🎤 Voice on — hold the mic (or Space) to talk', '#5dde8b');
   } catch { voiceToast('Mic permission denied','#e74c3c'); }
 }
 function voiceTeardown(){
@@ -448,8 +450,10 @@ function voiceTeardown(){
 function voiceTalkStart(){ if (!voiceOn || voiceTalking) return; voiceTalking = true; if (voiceStream) voiceStream.getAudioTracks().forEach(t => t.enabled = true); updateVoiceBtn(); }
 function voiceTalkEnd(){ if (!voiceTalking) return; voiceTalking = false; if (voiceStream) voiceStream.getAudioTracks().forEach(t => t.enabled = false); updateVoiceBtn(); }
 
-// Only useful in P2P online play with at least one human on the other end
-function voiceCanUse(){ return LOCAL_MODE && (netRole === 'peer' || (netRole === 'host' && voiceHumanCount > 0)); }
+// Available in any P2P online game (host or peer) — a room can gain friends at
+// any time via its code, so the host sees the mic too (it simply has no one to
+// reach until someone joins).
+function voiceCanUse(){ return LOCAL_MODE && !!netRole; }
 function updateVoiceVisibility(){
   const btn = document.getElementById('voiceBtn'); if (!btn) return;
   const show = voiceCanUse() && document.getElementById('gameScreen').classList.contains('active');
