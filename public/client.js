@@ -571,7 +571,8 @@ function onMsg(m) {
       // Round-wind change announcement (East→South→West→North)
       if (pendingWindBanner && window.phaserScene) {
         const w=pendingWindBanner; pendingWindBanner=null;
-        setTimeout(()=>{ if(window.phaserScene) window.phaserScene.showCallBanner(`${WL[w]} Round`, `${WE[w]} Prevailing wind is now ${WL[w]}`, '#ffd700'); }, 400);
+        const idx=WINDS_ARR.indexOf(w), prev=WINDS_ARR[(idx+3)%4];
+        setTimeout(()=>{ if(window.phaserScene) window.phaserScene.showCallBanner(`${WL[w]} Round`, `${WL[prev]} round complete — now the ${WL[w]} round`, '#ffd700'); }, 400);
       }
       // Let the win call banner play out before covering it with the win screen
       if (G.winner) { const fresh=!prev?.winner; setTimeout(()=>{ if(G&&G.winner) showWin(G); }, fresh&&G.winner!=='draw'?1500:0); }
@@ -1378,7 +1379,19 @@ class GameScene extends Phaser.Scene {
     bdg.fillStyle(0x140b28,0.92); bdg.fillCircle(bx,by,br);
     bdg.lineStyle(1,accent,0.95); bdg.strokeCircle(bx,by,br);
     this.txt(bx,by,WIND_INI[wind]||'?',{fontSize:`${Math.round(br*1.35)}px`,fontStyle:'bold',color:'#ffffff',resolution:2}).setOrigin(0.5);
-    // Name
+    // Dealer crown on the East seat (East = the dealer / 莊)
+    const isDealer = wind==='east';
+    if (isDealer){
+      const cg=this.add.graphics().setDepth(7); this.track(cg);
+      const cw=ar*1.5, ch=ar*0.8, cx0=ax-cw/2, cb=ay-ar+1, ct=cb-ch;
+      cg.fillStyle(0xffd54f,1);
+      cg.fillRoundedRect(cx0,cb-ch*0.34,cw,ch*0.4,1.5);
+      cg.fillTriangle(cx0,cb, cx0+cw*0.17,ct, cx0+cw*0.34,cb);
+      cg.fillTriangle(cx0+cw*0.33,cb, cx0+cw*0.5,ct-ch*0.12, cx0+cw*0.67,cb);
+      cg.fillTriangle(cx0+cw*0.66,cb, cx0+cw*0.83,ct, cx0+cw,cb);
+      cg.fillStyle(0xfff3b0,0.9); cg.fillCircle(cx0+cw*0.17,ct+1,1); cg.fillCircle(cx0+cw*0.5,ct-ch*0.12+1,1); cg.fillCircle(cx0+cw*0.83,ct+1,1);
+    }
+    // Name (the gold crown above the avatar marks the dealer)
     const nm=(name||'').slice(0,me?14:9);
     this.txt(ax+ar+5,ay,nm,{fontSize:'11px',fontStyle:isCur?'bold':'normal',color:isCur?'#ffffff':'#d7cde8',resolution:2}).setOrigin(0,0.5);
     // Score (right)
