@@ -1062,46 +1062,39 @@ class GameScene extends Phaser.Scene {
     const tintC=Phaser.Display.Color.HexStringToColor(color).color;
     const diag=Math.hypot(W,H);
 
-    // (1) White impact flash
-    const flash=this.add.graphics().setDepth(188);
-    flash.fillStyle(0xffffff,1); flash.fillRect(0,0,W,H); flash.alpha=0;
-    this.tweens.add({targets:flash,alpha:{from:0.55,to:0},duration:240,ease:'Cubic.easeOut'});
-
-    // (2) Radial speed-lines bursting outward (集中線)
+    // (1) Soft radial speed-lines — subtle, quick fade
     const lines=this.add.image(W/2,cy,'speedlines').setDepth(189)
       .setBlendMode(Phaser.BlendModes.ADD).setAlpha(0).setAngle(Math.random()*360);
-    lines.setDisplaySize(diag*2.4,diag*2.4);
-    const fullSc=lines.scaleX; lines.setScale(fullSc*0.5);
-    this.tweens.add({targets:lines,scaleX:fullSc,scaleY:fullSc,duration:640,ease:'Cubic.easeOut'});
-    this.tweens.add({targets:lines,alpha:{from:0.5,to:0},duration:600,ease:'Cubic.easeOut'});
-    this.tweens.add({targets:lines,angle:lines.angle+10,duration:900});
+    lines.setDisplaySize(diag*2.2,diag*2.2);
+    const fullSc=lines.scaleX; lines.setScale(fullSc*0.78);
+    this.tweens.add({targets:lines,scaleX:fullSc,scaleY:fullSc,duration:520,ease:'Cubic.easeOut'});
+    this.tweens.add({targets:lines,alpha:{from:0.18,to:0},duration:480,ease:'Cubic.easeOut'});
 
-    // (3) Coloured glow halo behind the text
+    // (2) Coloured glow halo behind the text
     const glow=this.add.image(W/2,cy-2,'glow').setDepth(189.5).setTint(tintC)
-      .setBlendMode(Phaser.BlendModes.ADD).setAlpha(0).setDisplaySize(W*0.95,H*0.55);
-    this.tweens.add({targets:glow,alpha:{from:0.8,to:0},duration:900,ease:'Cubic.easeOut'});
+      .setBlendMode(Phaser.BlendModes.ADD).setAlpha(0).setDisplaySize(W*0.9,H*0.5);
+    this.tweens.add({targets:glow,alpha:{from:0.4,to:0},duration:780,ease:'Cubic.easeOut'});
 
-    // (4) Dark band, tinted by the call colour
+    // (3) Dark band, tinted by the call colour
     const band=this.add.graphics().setDepth(190).setAlpha(0);
     band.fillStyle(0x000000,0.45); band.fillRect(0,cy-42,W,84);
-    band.fillStyle(tintC,0.16); band.fillRect(0,cy-42,W,84);
-    band.fillStyle(0xffffff,0.14); band.fillRect(0,cy-42,W,2); band.fillRect(0,cy+40,W,2);
-    this.tweens.add({targets:band,alpha:1,duration:120});
+    band.fillStyle(tintC,0.14); band.fillRect(0,cy-42,W,84);
+    band.fillStyle(0xffffff,0.12); band.fillRect(0,cy-42,W,2); band.fillRect(0,cy+40,W,2);
+    this.tweens.add({targets:band,alpha:1,duration:140});
 
-    // (5) Big title — punches in over-scaled + tilted, then settles with a wobble
-    const fs=Math.min(60, Math.max(36, Math.floor(W/8.5)));
+    // (4) Title — gentle scale-in with a slight tilt
+    const fs=Math.min(56, Math.max(34, Math.floor(W/9)));
     const t=this.add.text(W/2,cy-6,jp,{fontFamily:FONT,fontSize:fs+'px',fontStyle:'900',color,
-      stroke:'#ffffff',strokeThickness:8,resolution:2,
-      shadow:{offsetX:0,offsetY:4,color:'#000000',blur:12,fill:true}})
-      .setOrigin(0.5).setDepth(192).setScale(3).setAlpha(0).setAngle(-8);
+      stroke:'#ffffff',strokeThickness:7,resolution:2,
+      shadow:{offsetX:0,offsetY:3,color:'#000000',blur:10,fill:true}})
+      .setOrigin(0.5).setDepth(192).setScale(1.7).setAlpha(0).setAngle(-3);
     const s=this.add.text(W/2,cy+fs*0.52,sub,{fontFamily:FONT,fontSize:'14px',color:'#ffffff',
       stroke:'#000000',strokeThickness:3,resolution:2}).setOrigin(0.5,0).setDepth(192).setAlpha(0);
-    const all=[band,t,s,glow,lines,flash];
-    this.tweens.add({targets:t,scale:1,alpha:1,angle:-3,duration:180,ease:'Back.easeOut',
-      onComplete:()=>{ this.cameras.main.shake(150,0.009);
-        this.tweens.add({targets:t,angle:{from:-3,to:2},duration:150,yoyo:true});
+    const all=[band,t,s,glow,lines];
+    this.tweens.add({targets:t,scale:1,alpha:1,angle:0,duration:190,ease:'Back.easeOut',
+      onComplete:()=>{ this.cameras.main.shake(70,0.0025);
         this.tweens.add({targets:s,alpha:1,duration:150});
-        this.tweens.add({targets:all,alpha:0,duration:380,delay:1000,
+        this.tweens.add({targets:all,alpha:0,duration:360,delay:950,
           onComplete:()=>all.forEach(o=>{try{o.destroy();}catch{}})});
       }});
   }
