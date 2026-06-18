@@ -1248,28 +1248,24 @@ class GameScene extends Phaser.Scene {
     const texKey = !faceDown && tile ? tileTexKey(tile) : null;
 
     if (faceDown) {
-      // 3-D lying tile: green back on top of an ivory body edge (no painted
-      // drop shadow — translucent bands below tiles read as artifacts)
+      // Cute candy tile: chunky rounded body, bright bubbly green back with a
+      // glossy shine + centre dot (no painted drop shadow — translucent bands
+      // below tiles read as artifacts).
+      const cr=Math.max(3,Math.round(w*0.24));
       const edge=Math.max(2,Math.round(h*0.14));
       // Ivory body (visible as the front edge below the green back)
-      // NOTE: fillGradientStyle is WebGL-only and this game runs the CANVAS
-      // renderer, so depth is faked with flat two-tone bands instead.
-      g.fillStyle(0xe9e2c8); g.fillRoundedRect(-w/2,-h/2,w,h,r);
-      g.fillStyle(0xbdb597,0.8); g.fillRect(-w/2+1,h/2-Math.ceil(edge/2),w-2,Math.ceil(edge/2)-1);
-      g.lineStyle(1,0x8f8868,0.55); g.strokeRoundedRect(-w/2,-h/2,w,h,r);
-      // Green back face (lit from top)
-      g.fillStyle(0x0e7a30); g.fillRoundedRect(-w/2,-h/2,w,h-edge,r);
-      g.fillStyle(0x1a9a50,0.85); g.fillRoundedRect(-w/2,-h/2,w,(h-edge)*0.45,{tl:r,tr:r,bl:0,br:0});
-      g.lineStyle(1,0x0a431a,0.8); g.strokeRoundedRect(-w/2,-h/2,w,h-edge,r);
-      // Gloss strip along the top
-      g.fillStyle(0xffffff,0.18); g.fillRoundedRect(-w/2+1.5,-h/2+1.5,w-3,Math.max(2,h*0.10),{tl:r-1,tr:r-1,bl:0,br:0});
-      g.lineStyle(1,0x3fb35f,0.35); g.strokeRoundedRect(-w/2+3,-h/2+3,w-6,h-edge-6,Math.max(2,r-2));
-      if (w>=22) {
-        const cols=2, rows=3, pw=(w-12)/(cols+1), ph=(h-edge-8)/(rows+1);
-        for(let rr=1;rr<=rows;rr++) for(let c=1;c<=cols;c++) {
-          g.fillStyle(0x4cc06a,0.4);
-          g.fillCircle(-w/2+6+c*pw, -h/2+4+rr*ph, 2.5);
-        }
+      g.fillStyle(0xede4c8); g.fillRoundedRect(-w/2,-h/2,w,h,cr);
+      g.fillStyle(0xc9bf9c,0.85); g.fillRect(-w/2+1,h/2-Math.ceil(edge/2),w-2,Math.ceil(edge/2)-1);
+      g.lineStyle(1,0x8f8868,0.5); g.strokeRoundedRect(-w/2,-h/2,w,h,cr);
+      // Candy-green back face (lit from top)
+      g.fillStyle(0x16a653); g.fillRoundedRect(-w/2,-h/2,w,h-edge,cr);
+      g.fillStyle(0x4ad681,0.9); g.fillRoundedRect(-w/2,-h/2,w,(h-edge)*0.5,{tl:cr,tr:cr,bl:0,br:0});
+      g.lineStyle(1,0x0a5a24,0.7); g.strokeRoundedRect(-w/2,-h/2,w,h-edge,cr);
+      // Big glossy bubble highlight
+      g.fillStyle(0xffffff,0.28); g.fillEllipse(-w*0.12,-h*0.2,w*0.64,h*0.3);
+      if (w>=20) { // cute centre dot motif
+        g.fillStyle(0xffffff,0.55); g.fillCircle(0,-edge*0.15,Math.max(2,w*0.15));
+        g.fillStyle(0x16a653,0.95); g.fillCircle(0,-edge*0.15,Math.max(1.3,w*0.09));
       }
       container.add(g);
     } else if (texKey && this.textures.exists(texKey)) {
@@ -1279,10 +1275,10 @@ class GameScene extends Phaser.Scene {
       const img=this.add.image(0,0,texKey).setDisplaySize(w,h);
       if (selected) img.setTint(0xffeca0);
       container.add(img);
-      // Gloss sweep across the upper face
+      // Puffy candy shine: a soft diagonal bubble highlight + thin top strip
       const gloss=this.add.graphics();
-      gloss.fillStyle(0xffffff,0.14);
-      gloss.fillRoundedRect(-w/2+2,-h/2+2,w-4,h*0.16,{tl:r,tr:r,bl:0,br:0});
+      gloss.fillStyle(0xffffff,0.20); gloss.fillEllipse(-w*0.16,-h*0.27,w*0.52,h*0.26);
+      gloss.fillStyle(0xffffff,0.12); gloss.fillRoundedRect(-w/2+2,-h/2+2,w-4,h*0.16,{tl:r,tr:r,bl:0,br:0});
       container.add(gloss);
       if (selected || highlighted || hint) {
         const ring=this.add.graphics();
@@ -1472,8 +1468,7 @@ class GameScene extends Phaser.Scene {
     const pw=g.prevailingWind||'east';
     this.drawTile(8,infoH/2-11,{suit:'wind',value:pw},{w:18,h:22});
     this.txt(30,infoH/2,`${WL[pw]} Round · Hand ${g.round||1}`,{fontSize:'12px',color:'#cbb8e8'}).setOrigin(0,0.5);
-    this.drawTile(W/2-26,infoH/2-9,null,{w:15,h:18,faceDown:true});
-    this.txt(W/2-6,infoH/2,`${g.wallCount}`,{fontSize:'12px',color:'#ff9ecd'}).setOrigin(0,0.5);
+    // (wall count now shown prominently in the centre of the table)
 
     const sc=g.scores[myId]||0;
     const scCol=sc>0?'#5dfc8b':sc<0?'#e74c3c':'#cccccc';
@@ -1671,6 +1666,18 @@ class GameScene extends Phaser.Scene {
     } else if (!pool.length) {
       this.txt(cx,z.y+z.h*0.42,'— Discard pool —',{fontSize:'11px',color:'#ffffff',align:'center'}).setOrigin(0.5).setAlpha(0.22);
     }
+
+    // ── Remaining-wall counter, centred on the table (on top of the pool so it
+    //    stays readable even as discards fill in) ──
+    const wc=g.wallCount||0;
+    const cdR=Math.max(20,Math.min(ringW,ringH)*0.16);
+    const cd=this.add.graphics().setDepth(6); this.track(cd);
+    cd.fillStyle(0x140b28,0.55); cd.fillCircle(ecx,ecy,cdR*1.28);
+    cd.lineStyle(2,0xffd166,0.5); cd.strokeCircle(ecx,ecy,cdR*1.28);
+    cd.lineStyle(1,0xff9ecd,0.35); cd.strokeCircle(ecx,ecy,cdR*1.05);
+    this.txt(ecx,ecy-cdR*0.28,`${wc}`,{fontSize:`${Math.round(cdR*1.15)}px`,fontStyle:'900',color:'#ffe27a',resolution:2,
+      stroke:'#3a1f00',strokeThickness:3}).setOrigin(0.5).setDepth(7);
+    this.txt(ecx,ecy+cdR*0.62,'tiles left',{fontSize:`${Math.max(9,Math.round(cdR*0.36))}px`,color:'#ffd1e6',resolution:2}).setOrigin(0.5).setDepth(7);
 
     // Status
     let statusTxt='', statusCol='#ff9ecd';
