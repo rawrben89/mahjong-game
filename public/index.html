@@ -6,7 +6,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#1a1033">
-<title>雀 HK Mahjong</title>
+<title>中 HK Mahjong</title>
 <link rel="icon" type="image/svg+xml" href="assets/tiles/d1.svg">
 <link rel="apple-touch-icon" href="assets/icon-192.png">
 <link rel="manifest" href="manifest.json">
@@ -38,9 +38,22 @@ html,body{width:100%;height:100%;height:100dvh;overflow:hidden;overscroll-behavi
 .card{position:relative;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.045));border:1px solid rgba(255,255,255,.15);border-radius:20px;padding:28px;width:min(420px,94vw);display:flex;flex-direction:column;gap:12px;box-shadow:0 24px 60px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.12);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);animation:cardin .45s cubic-bezier(.2,.9,.3,1.2) both}
 .card::before{content:'';position:absolute;top:0;left:18%;right:18%;height:2px;background:linear-gradient(90deg,transparent,#ff9ecd,#c98fff,transparent);border-radius:2px}
 @keyframes cardin{from{opacity:0;transform:translateY(14px) scale(.97)}}
-.card h1{font-size:2.1rem;text-align:center;background:linear-gradient(90deg,#fff 0%,#ffd1e6 50%,#cbb3ff 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:.5px}
+.card h1{font-size:2.3rem;text-align:center;background:linear-gradient(90deg,#fff 0%,#ffd1e6 50%,#cbb3ff 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:1px;font-weight:900;margin-top:2px}
 .card h2{font-size:1.4rem;text-align:center}
 .card h3{font-size:.85rem;opacity:.6;margin-top:4px}
+
+/* Red-dragon (中) hero emblem on the home/lobby cards */
+.logo-emblem{position:relative;align-self:center;width:96px;height:96px;border-radius:24px;display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(120% 120% at 30% 20%,#fff7f2,#ffe3d6 35%,#f6cfc4 100%);
+  box-shadow:0 10px 26px rgba(214,40,40,.35),inset 0 2px 0 rgba(255,255,255,.9),inset 0 -6px 12px rgba(180,60,40,.18);
+  border:1px solid rgba(255,255,255,.7);animation:emblemFloat 4s ease-in-out infinite}
+.logo-emblem.sm{width:74px;height:74px;border-radius:19px}
+.logo-emblem::after{content:'';position:absolute;inset:-7px;border-radius:30px;background:radial-gradient(closest-side,rgba(255,90,90,.45),transparent 75%);z-index:-1;filter:blur(3px)}
+.logo-glyph{font-weight:900;font-size:3.4rem;line-height:1;
+  background:linear-gradient(180deg,#ff4d4d 0%,#d62828 55%,#a51d1d 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 1px 0 rgba(255,255,255,.6))}
+.logo-emblem.sm .logo-glyph{font-size:2.7rem}
+@keyframes emblemFloat{0%,100%{transform:translateY(0) rotate(-1.5deg)}50%{transform:translateY(-6px) rotate(1.5deg)}}
 
 input{padding:11px 15px;border-radius:13px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.07);color:#fff;font-size:.95rem;outline:none;width:100%}
 input::placeholder{opacity:.38}
@@ -265,7 +278,8 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
 <!-- ── Name ───────────────────────────────────────────────────────────────── -->
 <div id="nameScreen" class="screen active">
   <div class="card">
-    <h1>🌸 雀 HK Mahjong</h1>
+    <div class="logo-emblem"><span class="logo-glyph">中</span></div>
+    <h1>HK Mahjong</h1>
     <div class="deco-tiles">
       <img src="assets/tiles/f1.svg" alt=""><img src="assets/tiles/d1.svg" alt=""><img src="assets/tiles/w5.svg" alt=""><img src="assets/tiles/s1.svg" alt=""><img src="assets/tiles/t5.svg" alt=""><img src="assets/tiles/d2.svg" alt=""><img src="assets/tiles/h5.svg" alt="">
     </div>
@@ -281,7 +295,8 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
 <!-- ── Lobby ──────────────────────────────────────────────────────────────── -->
 <div id="lobbyScreen" class="screen">
   <div class="card">
-    <h1>🌸 雀 Mahjong</h1>
+    <div class="logo-emblem sm"><span class="logo-glyph">中</span></div>
+    <h1>Mahjong</h1>
     <div style="text-align:center;opacity:.65;font-size:.88rem">Hello, <span id="myNameDisp" style="color:#ff9ecd;font-weight:700"></span>!</div>
     <div class="local-only inf" style="display:none">🎴 Create a room to play vs bots, or share your room code so friends can join online!</div>
     <div class="sep"></div>

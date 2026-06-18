@@ -350,13 +350,13 @@ function connect() {
 }
 let pendingSess = null;
 function tx(msg) { if (ws && ws.readyState===1) ws.send(JSON.stringify(msg)); }
-function saveSession() { sessionStorage.setItem('mjSession', JSON.stringify({name:myName, roomId, playerId:myId})); }
+function saveSession() { sessionStorage.setItem('mjSession', JSON.stringify({name:myName, roomId, playerId:myId, isHost})); }
 
 function onMsg(m) {
   switch(m.type) {
     case 'welcome': myId = m.playerId; break;
 
-    case 'resumed': roomId = m.roomId; saveSession(); break;
+    case 'resumed': roomId = m.roomId; if (pendingSess) isHost = !!pendingSess.isHost; saveSession(); break;
 
     case 'resumeFailed': {
       // Seat is gone (game ended / room closed) — fall back to normal flow
@@ -1630,12 +1630,29 @@ class GameScene extends Phaser.Scene {
     // ── Discard pool inside the wall ring ──
     const inset=wh+8;
     const poolX=ringX+inset, poolY=ringY+inset, poolW=ringW-inset*2, poolH=ringH-inset*2;
+
+    // Discard tray — a defined panel so the pool clearly stands out from the felt
+    const tray=this.add.graphics(); this.track(tray);
+    tray.fillStyle(0x080518,0.5); tray.fillRoundedRect(poolX-5,poolY-5,poolW+10,poolH+10,11);
+    tray.lineStyle(1.5,0xffd166,0.28); tray.strokeRoundedRect(poolX-5,poolY-5,poolW+10,poolH+10,11);
+    tray.lineStyle(1,0xff9ecd,0.16); tray.strokeRoundedRect(poolX-2,poolY-2,poolW+4,poolH+4,9);
+
+    // Remaining-wall counter — a centred watermark drawn BEHIND the discards, so
+    // the pool stays the clear foreground (still readable when the pool is sparse).
+    const wc=g.wallCount||0;
+    const cdR=Math.max(17,Math.min(ringW,ringH)*0.145);
+    const cd=this.add.graphics(); this.track(cd);
+    cd.fillStyle(0x140b28,0.4); cd.fillCircle(ecx,ecy,cdR*1.3);
+    cd.lineStyle(1.5,0xffd166,0.28); cd.strokeCircle(ecx,ecy,cdR*1.3);
+    this.txt(ecx,ecy-cdR*0.26,`${wc}`,{fontSize:`${Math.round(cdR*1.05)}px`,fontStyle:'900',color:'#ffe27a',resolution:2,stroke:'#3a1f00',strokeThickness:3}).setOrigin(0.5).setAlpha(0.9);
+    this.txt(ecx,ecy+cdR*0.6,'left',{fontSize:`${Math.max(8,Math.round(cdR*0.4))}px`,color:'#ffd1e6',resolution:2}).setOrigin(0.5).setAlpha(0.85);
+
     const pool=g.allDiscards||[];
     if (pool.length && poolH>20) {
-      // Largest tile size that fits the whole pool, floor 12px; trim oldest if even that overflows
+      // Largest tile size that fits the whole pool, floor 16px; trim oldest if even that overflows
       const dgap=2;
-      let dw = z.w<480 ? 30 : 40; // phones: compact but readable
-      for (; dw>12; dw-=2) {
+      let dw = z.w<480 ? 34 : 44; // bigger, clearer discards
+      for (; dw>16; dw-=2) {
         const dh=Math.round(dw*1.21);
         if (Math.floor((poolW+dgap)/(dw+dgap)) * Math.floor((poolH+dgap)/(dh+dgap)) >= pool.length) break;
       }
@@ -1666,18 +1683,6 @@ class GameScene extends Phaser.Scene {
     } else if (!pool.length) {
       this.txt(cx,z.y+z.h*0.42,'— Discard pool —',{fontSize:'11px',color:'#ffffff',align:'center'}).setOrigin(0.5).setAlpha(0.22);
     }
-
-    // ── Remaining-wall counter, centred on the table (on top of the pool so it
-    //    stays readable even as discards fill in) ──
-    const wc=g.wallCount||0;
-    const cdR=Math.max(20,Math.min(ringW,ringH)*0.16);
-    const cd=this.add.graphics().setDepth(6); this.track(cd);
-    cd.fillStyle(0x140b28,0.55); cd.fillCircle(ecx,ecy,cdR*1.28);
-    cd.lineStyle(2,0xffd166,0.5); cd.strokeCircle(ecx,ecy,cdR*1.28);
-    cd.lineStyle(1,0xff9ecd,0.35); cd.strokeCircle(ecx,ecy,cdR*1.05);
-    this.txt(ecx,ecy-cdR*0.28,`${wc}`,{fontSize:`${Math.round(cdR*1.15)}px`,fontStyle:'900',color:'#ffe27a',resolution:2,
-      stroke:'#3a1f00',strokeThickness:3}).setOrigin(0.5).setDepth(7);
-    this.txt(ecx,ecy+cdR*0.62,'tiles left',{fontSize:`${Math.max(9,Math.round(cdR*0.36))}px`,color:'#ffd1e6',resolution:2}).setOrigin(0.5).setDepth(7);
 
     // Status
     let statusTxt='', statusCol='#ff9ecd';
