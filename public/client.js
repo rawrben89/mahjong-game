@@ -5,7 +5,13 @@ let G = null, prevG = null, selTile = null;
 let lastDrawnTileId = null, prevHandIds = new Set();
 let unreadCount = 0, chatOpen = true, pendingWindBanner = null;
 let phaserGame = null;
-let soundEnabled = true;
+// Persisted UI settings (sound on by default, hints off by default)
+function loadSetting(key, dflt){ try { const v=localStorage.getItem(key); return v==null?dflt:v==='1'; } catch { return dflt; } }
+function saveSetting(key, val){ try { localStorage.setItem(key, val?'1':'0'); } catch {} }
+let soundEnabled = loadSetting('mj_sound', true);
+let hintsEnabled = loadSetting('mj_hints', false);
+// Wins this match, tracked client-side (server only sends scores) — keyed by player id
+let matchWins = {};
 
 const FONT = '"M PLUS Rounded 1c","Segoe UI",sans-serif';
 // Seat-wind accent colours (match the mahjong-scoreboard palette)
@@ -75,6 +81,72 @@ function tname(t) {
   return t.value+' '+({bamboo:'Bamboo',characters:'Character',circles:'Circle'}[t.suit]||t.suit);
 }
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ─── Hint engine (optional, opt-in) ─────────────────────────────────────────────
+// A compact self-contained hand analyser so hints work in BOTH multiplayer and
+// solo/P2P modes (no dependency on the server or game-core.js being loaded).
+const SUIT_SEQ = { bamboo:1, characters:1, circles:1 };
+const ALLKEYS = [];
+['characters','bamboo','circles'].forEach(s=>{ for(let v=1;v<=9;v++) ALLKEYS.push(s+':'+v); });
+['east','south','west','north'].forEach(v=>ALLKEYS.push('wind:'+v));
+['red','green','white'].forEach(v=>ALLKEYS.push('dragon:'+v));
+function handCounts(tiles){ const c={}; tiles.forEach(t=>{ const k=t.suit+':'+t.value; c[k]=(c[k]||0)+1; }); return c; }
+function tkey(k){ const i=k.indexOf(':'); return [k.slice(0,i), k.slice(i+1)]; }
+// Can the remaining tiles fully decompose into runs/triplets (no leftover)?
+function meldAll(cnt){
+  let k=null; for(const kk of ALLKEYS){ if(cnt[kk]>0){ k=kk; break; } }
+  if(!k) return true;
+  const [suit,vs]=tkey(k); const v=+vs;
+  if(cnt[k]>=3){ cnt[k]-=3; const ok=meldAll(cnt); cnt[k]+=3; if(ok) return true; }
+  if(SUIT_SEQ[suit] && v<=7){ const k2=suit+':'+(v+1), k3=suit+':'+(v+2);
+    if(cnt[k2]>0&&cnt[k3]>0){ cnt[k]--;cnt[k2]--;cnt[k3]--; const ok=meldAll(cnt); cnt[k]++;cnt[k2]++;cnt[k3]++; if(ok) return true; } }
+  return false;
+}
+// Standard hand: one pair + the rest all melds (set count is implied by tile count)
+function isStandardWin(cnt){
+  for(const k of ALLKEYS){ if((cnt[k]||0)>=2){ cnt[k]-=2; const ok=meldAll(cnt); cnt[k]+=2; if(ok) return true; } }
+  return false;
+}
+function isSevenPairs(cnt){ const vals=Object.values(cnt); return vals.length===7 && vals.every(v=>v===2); }
+// Tile-types that would complete a 13-tile concealed hand (meldCount melds already down)
+function winningWaits(cnt, meldCount){
+  const waits=[];
+  for(const t of ALLKEYS){ if((cnt[t]||0)>=4) continue; cnt[t]=(cnt[t]||0)+1;
+    if(isStandardWin(cnt)||(meldCount===0&&isSevenPairs(cnt))) waits.push(t); cnt[t]--; if(cnt[t]===0) delete cnt[t]; }
+  return waits;
+}
+function tileUsefulness(cnt,suit,v){
+  const k=suit+':'+v; let u=0;
+  if((cnt[k]||0)>=3) u+=20; else if((cnt[k]||0)===2) u+=10;
+  if(SUIT_SEQ[suit]){
+    u += (cnt[suit+':'+(v-1)]?4:0)+(cnt[suit+':'+(v+1)]?4:0);
+    u += (cnt[suit+':'+(v-2)]?2:0)+(cnt[suit+':'+(v+2)]?2:0);
+    if(v>=2&&v<=8) u+=1; // central tiles are more flexible
+  }
+  return u;
+}
+// Returns {discardId, ready, waits:[tileType keys]} or null
+function computeHint(hand, meldCount){
+  if(!hand||!hand.length) return null;
+  const base=handCounts(hand);
+  const repId={}; hand.forEach(t=>{ repId[t.suit+':'+t.value]=t.id; });
+  let best=null;
+  for(const k of Object.keys(base)){
+    const c={...base}; c[k]--; if(c[k]===0) delete c[k];
+    const waits=winningWaits(c, meldCount);
+    if(waits.length){
+      const live=waits.reduce((s,t)=>s+(4-(base[t]||0)),0); // unseen copies available
+      if(!best || live>best.live) best={key:k,waits,live};
+    }
+  }
+  if(best) return { discardId:repId[best.key], ready:true, waits:best.waits };
+  // Not ready → suggest the least useful (most isolated) tile to discard
+  let worstKey=null, worstU=Infinity;
+  for(const k of Object.keys(base)){ const [s,vs]=tkey(k); const u=tileUsefulness(base,s,+vs);
+    if(u<worstU){ worstU=u; worstKey=k; } }
+  return worstKey ? { discardId:repId[worstKey], ready:false, waits:[] } : null;
+}
+function waitsToGlyphs(waits){ return waits.slice(0,8).map(k=>{ const [s,vs]=tkey(k); const v=/^\d+$/.test(vs)?+vs:vs; return te({suit:s,value:v}); }).join(' '); }
 
 // ─── Sound ────────────────────────────────────────────────────────────────────
 let _ac = null;
@@ -148,6 +220,7 @@ function detectEvents(prev, curr) {
       scene.showToast('Draw — Wall exhausted!', '#aaaaaa');
     } else {
       const w = curr.players.find(p => p.id === curr.winner);
+      matchWins[curr.winner] = (matchWins[curr.winner]||0) + 1;
       const big = curr.winType==='selfDraw' ? 'SELF-DRAW WIN!' : 'WIN!';
       if (curr.winner === myId) { scene.showCallBanner(big, 'You win!', '#ffd700'); playSound('win'); }
       else { scene.showCallBanner(big, `${w?.name||'?'} wins`, '#ff5577'); playSound('lose'); }
@@ -318,7 +391,7 @@ function onMsg(m) {
       document.getElementById('winScreen').style.display='none';
       document.getElementById('matchScreen').style.display='none';
       // Keep chat across rounds; only wipe it for a brand-new table
-      if (!G) clearChat();
+      if (!G) { clearChat(); matchWins={}; }
       showSc('gameScreen'); initPhaser();
       if (m.windChanged) pendingWindBanner = m.windChanged;
       break;
@@ -659,13 +732,15 @@ function showWin(g) {
   const tot = g.scores || {};
   const sorted=[...g.players].sort((a,b)=>(tot[b.id]||0)-(tot[a.id]||0));
   let tbl='<tr><td style="font-weight:700;padding-bottom:6px;color:#fff">Player</td>'+
+    '<td style="text-align:right;font-size:.78rem;opacity:.7">Wins</td>'+
     '<td style="text-align:right;font-size:.78rem;opacity:.7">This hand</td>'+
     '<td style="text-align:right;font-size:.78rem;opacity:.7">Total</td></tr>';
   sorted.forEach(p=>{
-    const d=hs[p.id]||0, t=tot[p.id]||0;
+    const d=hs[p.id]||0, t=tot[p.id]||0, wcnt=matchWins[p.id]||0;
     const dc=d>0?'#5dfc8b':d<0?'#e74c3c':'#888';
     const tc=t>0?'#5dfc8b':t<0?'#e74c3c':'#ff9ecd';
     tbl+=`<tr class="${p.id===g.winner?'winner-row':''}"><td>${esc(p.name)}${p.id===myId?' (You)':''}${p.isBot?' 🤖':''}</td>`+
+      `<td style="text-align:right;color:#ffd700">${wcnt?'🏆 '+wcnt:'—'}</td>`+
       `<td style="text-align:right;color:${dc}">${d>0?'+':''}${d}</td>`+
       `<td style="text-align:right;font-weight:700;color:${tc}">${t>0?'+':''}${t}</td></tr>`;
   });
@@ -690,7 +765,9 @@ function showMatchOver(m){
     `<div style="opacity:.6;font-size:.84rem;margin-bottom:6px">${m.hands} hands played · 4 rounds</div>`+
     `<table class="stbl">`+ m.standings.map((p,i)=>{
       const col=p.score>0?'#5dfc8b':p.score<0?'#e74c3c':'#ff9ecd';
+      const wcnt=matchWins[p.id]||0;
       return `<tr class="${i===0?'winner-row':''}"><td>${medals[i]} ${esc(p.name)}${p.id===myId?' (You)':''}${p.isBot?' 🤖':''}</td>`+
+        `<td style="text-align:right;font-size:.8rem;color:#ffd700">${wcnt?'🏆 '+wcnt:'—'}</td>`+
         `<td style="text-align:right;font-weight:800;color:${col}">${p.score>0?'+':''}${p.score}</td></tr>`;
     }).join('') + `</table>`;
   document.getElementById('matchNewBtn').style.display = isHost ? 'block' : 'none';
@@ -702,7 +779,28 @@ function requestNewMatch(){ tx({type:'newMatch'}); document.getElementById('matc
 // ─── Chat ─────────────────────────────────────────────────────────────────────
 document.getElementById('chatIn').addEventListener('keydown',e=>{if(e.key==='Enter')sendChat();});
 function sendChat(){const i=document.getElementById('chatIn');const t=i.value.trim();if(!t)return;tx({type:'chat',text:t});i.value='';}
+// Emotes ride the chat channel (works in multiplayer AND solo/P2P) with a sentinel prefix
+const EMOTE_TAG='✨E✨';
+const EMOTES=['😄','😂','😮','😎','😭','👍','👏','🔥','🎉','🀄'];
+function sendEmote(emoji){ closeEmotes(); tx({type:'chat', text:EMOTE_TAG+emoji}); }
+function buildEmoteBar(){
+  const b=document.getElementById('emoteBar'); if(!b||b.dataset.built) return;
+  b.innerHTML=EMOTES.map(e=>`<button type="button" onclick="sendEmote('${e}')">${e}</button>`).join('');
+  b.dataset.built='1';
+}
+function toggleEmotes(){ buildEmoteBar(); const b=document.getElementById('emoteBar'); if(!b) return;
+  b.style.display = b.style.display==='flex' ? 'none' : 'flex'; }
+function closeEmotes(){ const b=document.getElementById('emoteBar'); if(b) b.style.display='none'; }
+document.addEventListener('click',e=>{ const b=document.getElementById('emoteBar');
+  if(b&&b.style.display==='flex'&&!b.contains(e.target)&&!e.target.closest('#emoteBtn')) closeEmotes(); });
 function addChatMsg(m){
+  // Emote message → float a reaction over the sender's seat, skip the text log
+  if (typeof m.text==='string' && m.text.startsWith(EMOTE_TAG)) {
+    const emoji=m.text.slice(EMOTE_TAG.length);
+    if (window.phaserScene) window.phaserScene.showEmote(m.pid, emoji);
+    if (m.pid!==myId) playSound('click');
+    return;
+  }
   const el=document.getElementById('chatMsgs'),isMe=m.pid===myId;
   const d=document.createElement('div'); d.className='chat-msg'+(isMe?' me':'');
   d.innerHTML=`<div class="from">${esc(m.from)}</div><div class="text">${esc(m.text)}</div>`;
@@ -907,7 +1005,7 @@ class GameScene extends Phaser.Scene {
   // ── Tile renderer ──
   // Anchor: top-left corner.  Returns the Phaser Container.
   drawTile(x, y, tile, opts={}) {
-    const {w=46,h=56, faceDown=false, selected=false, highlighted=false,
+    const {w=46,h=56, faceDown=false, selected=false, highlighted=false, hint=false,
            clickable=false, onTap=null, animate=false, angle=0} = opts;
 
     const container = this.add.container(x+w/2, y+h/2);
@@ -954,12 +1052,16 @@ class GameScene extends Phaser.Scene {
       gloss.fillStyle(0xffffff,0.14);
       gloss.fillRoundedRect(-w/2+2,-h/2+2,w-4,h*0.16,{tl:r,tr:r,bl:0,br:0});
       container.add(gloss);
-      if (selected || highlighted) {
+      if (selected || highlighted || hint) {
         const ring=this.add.graphics();
         if (highlighted) { ring.lineStyle(4,0xffd700,0.25); ring.strokeRoundedRect(-w/2-4,-h/2-4,w+8,h+8,r+4); }
-        ring.lineStyle(2.5, selected?0x00c4aa:0xffd700, 0.95);
+        ring.lineStyle(2.5, hint?0x39d8ff:(selected?0x00c4aa:0xffd700), 0.95);
         ring.strokeRoundedRect(-w/2-1.5,-h/2-1.5,w+3,h+3,r+2);
         container.add(ring);
+        if (hint) { // gentle cyan pulse so the suggestion is unmistakable but calm
+          ring.alpha=0.55;
+          this.tweens.add({targets:ring,alpha:{from:1,to:0.4},duration:700,yoyo:true,repeat:-1});
+        }
       }
     } else {
       // Fallback: hand-drawn tile with emoji glyph (textures still loading)
@@ -968,9 +1070,10 @@ class GameScene extends Phaser.Scene {
       g.fillStyle(edgeCol,0.6); g.fillRoundedRect(-w/2,-h/2,w,h,r);
       const bgCol = selected?0xfff9a0:(SUIT_BG[tile?.suit]||0xfffef2);
       g.fillStyle(bgCol); g.fillRoundedRect(-w/2,-h/2,w,h-2,r);
-      const bCol=selected?0x00c4aa:highlighted?0xffd700:0x999999;
-      g.lineStyle(selected||highlighted?2:1.5,bCol); g.strokeRoundedRect(-w/2,-h/2,w,h,r);
+      const bCol=hint?0x39d8ff:selected?0x00c4aa:highlighted?0xffd700:0x999999;
+      g.lineStyle(selected||highlighted||hint?2:1.5,bCol); g.strokeRoundedRect(-w/2,-h/2,w,h,r);
       if (highlighted) { g.lineStyle(3.5,0xffd700,0.22); g.strokeRoundedRect(-w/2-3,-h/2-3,w+6,h+6,r+3); }
+      if (hint) { g.lineStyle(3.5,0x39d8ff,0.22); g.strokeRoundedRect(-w/2-3,-h/2-3,w+6,h+6,r+3); }
       container.add(g);
       if (tile) {
         const emoji=te(tile);
@@ -1069,6 +1172,26 @@ class GameScene extends Phaser.Scene {
     });
   }
 
+  // ── Floating emote reaction over a player's seat ──
+  showEmote(pid, emoji) {
+    const a=(this.seatAnchor||{})[pid];
+    const {W,H}=this.layout();
+    const x=a?a.x:W/2, y=a?a.y:H/2;
+    // Soft bubble backing so the emoji pops against any tile colour
+    const bub=this.add.graphics().setDepth(249);
+    bub.fillStyle(0x1a1030,0.82); bub.fillCircle(0,0,21);
+    bub.lineStyle(2,0xff9ecd,0.7); bub.strokeCircle(0,0,21);
+    bub.x=x; bub.y=y;
+    const e=this.add.text(x,y,emoji,{fontSize:'26px',resolution:2}).setOrigin(0.5,0.5).setDepth(250);
+    [bub,e].forEach(o=>{ o.setScale(0.2); o.alpha=0; });
+    this.tweens.add({targets:[bub,e],scaleX:1,scaleY:1,alpha:1,duration:240,ease:'Back.easeOut',
+      onComplete:()=>{
+        this.tweens.add({targets:[bub,e],y:'-=46',alpha:0,duration:1100,delay:900,ease:'Power2',
+          onComplete:()=>{ e.destroy(); bub.destroy(); }});
+      }});
+    this.track(bub); this.track(e);
+  }
+
   // ── Table background ──
   ensureFeltTexture() {
     if (this.textures.exists('felt')) return;
@@ -1118,13 +1241,21 @@ class GameScene extends Phaser.Scene {
 
     const sc=g.scores[myId]||0;
     const scCol=sc>0?'#5dfc8b':sc<0?'#e74c3c':'#cccccc';
-    this.txt(W-38,infoH/2,`${sc>0?'+':''}${sc} pts`,{fontSize:'12px',color:scCol}).setOrigin(1,0.5);
+    this.txt(W-56,infoH/2,`${sc>0?'+':''}${sc} pts`,{fontSize:'12px',color:scCol}).setOrigin(1,0.5);
 
     // Sound toggle (clickable text)
     const snd=this.add.text(W-8,infoH/2,soundEnabled?'🔊':'🔇',{fontSize:'14px'}).setOrigin(1,0.5).setDepth(50).setInteractive();
     this.track(snd);
-    snd.on('pointerdown',()=>{ soundEnabled=!soundEnabled; snd.setText(soundEnabled?'🔊':'🔇'); });
+    snd.on('pointerdown',()=>{ soundEnabled=!soundEnabled; saveSetting('mj_sound',soundEnabled); snd.setText(soundEnabled?'🔊':'🔇'); });
     snd.on('pointerover',()=>snd.setAlpha(0.65)); snd.on('pointerout',()=>snd.setAlpha(1));
+
+    // Hint toggle (💡) — dim when off; opt-in, default off
+    const hnt=this.add.text(W-30,infoH/2,'💡',{fontSize:'14px'}).setOrigin(1,0.5).setDepth(50).setInteractive();
+    hnt.setAlpha(hintsEnabled?1:0.32); this.track(hnt);
+    hnt.on('pointerdown',()=>{ hintsEnabled=!hintsEnabled; saveSetting('mj_hints',hintsEnabled);
+      hnt.setAlpha(hintsEnabled?1:0.4); if(G&&window.phaserScene) window.phaserScene.refresh(G);
+      this.showToast(hintsEnabled?'💡 Hints on':'Hints off', hintsEnabled?'#39d8ff':'#aaaaaa'); });
+    hnt.on('pointerover',()=>hnt.setAlpha(0.7)); hnt.on('pointerout',()=>hnt.setAlpha(hintsEnabled?1:0.32));
   }
 
   // ── Other player zone ──
@@ -1160,6 +1291,7 @@ class GameScene extends Phaser.Scene {
     // Side zones center their fitted panel vertically; north stays at the top
     const z={x:zone.x, w:zone.w, h:Math.min(zone.h,contentH),
              y:(pos==='west'||pos==='east')?zone.y+Math.max(0,(zone.h-contentH)/2):zone.y};
+    this.seatAnchor[player.id]={x:z.x+z.w/2, y:z.y+14};
 
     this.zoneBg(z,0x000000,isCur?0.27:0.18);
     if (isCur) {
@@ -1334,6 +1466,7 @@ class GameScene extends Phaser.Scene {
     const hdrH=22, bonusRowH=38;
     const panelH=Math.min(zone.h, hdrH+4+bonusRowH+rows*(th+5)+14);
     const z={x:zone.x, w:zone.w, h:panelH, y:zone.y+zone.h-panelH};
+    this.seatAnchor[player.id]={x:z.x+z.w/2, y:z.y+12};
 
     const mbg=this.add.graphics(); this.track(mbg);
     mbg.fillStyle(0x000000,0.34); mbg.fillRoundedRect(z.x,z.y,z.w,z.h,8);
@@ -1368,6 +1501,19 @@ class GameScene extends Phaser.Scene {
     // Hand tiles (1 row, or 2 rows on narrow screens)
     const handY_start=bonusRowY+bonusRowH;
     const canDiscard=isCur&&(g.myActions||[]).includes('discard');
+    // Optional discard hint (opt-in) — only on my discard turn, when nothing picked
+    let hintId=null;
+    if (hintsEnabled && canDiscard && selTile==null) {
+      const h=computeHint(hand, (g.melds[player.id]||[]).length);
+      if (h) {
+        hintId=h.discardId;
+        const label = h.ready
+          ? `💡 Ready! Discard this — waiting on  ${waitsToGlyphs(h.waits)}`
+          : '💡 Suggested discard';
+        this.txt(z.x+z.w/2, z.y-10, label, {fontSize:'12px',color:'#39d8ff',fontStyle:'bold',
+          stroke:'#001018',strokeThickness:3,resolution:2}).setOrigin(0.5,0.5).setDepth(60);
+      }
+    }
     // Hint above the selected tile
     if (selTile!=null && canDiscard && hand.some(t=>t.id===selTile)) {
       this.txt(z.x+z.w/2, z.y-10, 'Tap again to discard ⤵', {fontSize:'12px',color:'#ffd700',fontStyle:'bold',
@@ -1380,7 +1526,7 @@ class GameScene extends Phaser.Scene {
       const hy=handY_start+r*(th+5);
       rowTiles.forEach(t=>{
         const isSel=t.id===selTile, isNew=t.id===lastDrawnTileId;
-        this.drawTile(hx,hy,t,{w:tw,h:th,selected:isSel,animate:isNew,
+        this.drawTile(hx,hy,t,{w:tw,h:th,selected:isSel,animate:isNew,hint:t.id===hintId,
           clickable:canDiscard, onTap:canDiscard?(()=>tileClick(t.id)):null});
         hx+=tw+3;
       });
@@ -1390,6 +1536,7 @@ class GameScene extends Phaser.Scene {
   // ── Main refresh ──
   refresh(g) {
     this.clear();
+    this.seatAnchor={};
     G=g; if (!G) return;
     const myIdx=G.players.findIndex(p=>p.id===myId);
     if (myIdx<0) return;

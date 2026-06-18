@@ -1,7 +1,7 @@
 // Service worker: makes HK Mahjong installable and playable offline.
 // Solo vs bots works fully offline because the game engine runs in-browser.
 // Bump CACHE when assets change so clients pick up updates.
-const CACHE = 'hkmj-v1';
+const CACHE = 'hkmj-v2';
 
 // All paths are relative to the SW scope, so this works at the site root
 // (Node/Cloudflare) and under the /mahjong-game/ subpath (GitHub Pages).
