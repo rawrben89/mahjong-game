@@ -470,8 +470,16 @@ function showSc(id) {
   document.getElementById(id).classList.add('active');
   // Petals decorate the menus only — hide them once the game board is up
   const pet=document.getElementById('petals'); if(pet) pet.style.display = (id==='gameScreen')?'none':'block';
-  // The mobile chat button belongs to the game only (CSS decides flex/none)
-  const fab=document.getElementById('chatFloatBtn'); if(fab) fab.style.display = (id==='gameScreen')?'':'none';
+  // The floating chat button belongs to the game only
+  syncChatFab();
+}
+// Show the floating chat button only in-game AND when the chat panel is closed,
+// so it never overlaps the message box / Send button.
+function syncChatFab(){
+  const fab=document.getElementById('chatFloatBtn'); if(!fab) return;
+  const inGame=document.getElementById('gameScreen').classList.contains('active');
+  const chatOpen=document.getElementById('chatPanel').classList.contains('open');
+  fab.style.display = (inGame && !chatOpen) ? '' : 'none';
 }
 function showErr(msg) { const el=document.querySelector('.screen.active .err'); if(el){el.textContent=msg; setTimeout(()=>{if(el)el.textContent='';},4000);} }
 
@@ -789,7 +797,11 @@ function buildEmoteBar(){
   b.dataset.built='1';
 }
 function toggleEmotes(){ buildEmoteBar(); const b=document.getElementById('emoteBar'); if(!b) return;
-  b.style.display = b.style.display==='flex' ? 'none' : 'flex'; }
+  if(b.style.display==='flex'){ b.style.display='none'; return; }
+  // Sit the popup just above the corner buttons whatever their height (no overlap)
+  const cb=document.querySelector('.corner-btns');
+  b.style.bottom = ((cb?cb.offsetHeight:90) + 16) + 'px';
+  b.style.display='flex'; }
 function closeEmotes(){ const b=document.getElementById('emoteBar'); if(b) b.style.display='none'; }
 document.addEventListener('click',e=>{ const b=document.getElementById('emoteBar');
   if(b&&b.style.display==='flex'&&!b.contains(e.target)&&!e.target.closest('#emoteBtn')) closeEmotes(); });
@@ -816,10 +828,12 @@ function clearChat(){document.getElementById('chatMsgs').innerHTML='';unreadCoun
 function toggleChat(){
   const p=document.getElementById('chatPanel'); const opening=!p.classList.contains('open');
   p.classList.toggle('open', opening);
+  if(opening) closeEmotes();           // never show both popups at once
+  syncChatFab();                        // hide the float button while the panel is open
   if(opening){ unreadCount=0; document.getElementById('chatUnread').style.display='none'; const i=document.getElementById('chatIn'); if(i) setTimeout(()=>i.focus(),50); }
 }
 function openMobileChat(){ toggleChat(); }
-document.addEventListener('click',e=>{const p=document.getElementById('chatPanel');if(p.classList.contains('open')&&!p.contains(e.target)&&e.target.id!=='chatFloatBtn'&&!document.getElementById('chatFloatBtn').contains(e.target))p.classList.remove('open');});
+document.addEventListener('click',e=>{const p=document.getElementById('chatPanel');if(p.classList.contains('open')&&!p.contains(e.target)&&e.target.id!=='chatFloatBtn'&&!document.getElementById('chatFloatBtn').contains(e.target)){p.classList.remove('open');syncChatFab();}});
 
 // ─── Phaser init ──────────────────────────────────────────────────────────────
 function initPhaser() {
