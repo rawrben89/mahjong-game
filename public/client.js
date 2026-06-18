@@ -808,11 +808,40 @@ function selChow(vals){document.getElementById('chowOvl').style.display='none'; 
 function cancelChow(){document.getElementById('chowOvl').style.display='none';}
 
 // ─── Win screen ───────────────────────────────────────────────────────────────
+// Big celebratory/sad chibi mascot for the win screen (mood: win|lose|draw)
+function winChibiSVG(mood){
+  const hair='#ff9ecd';
+  let eyes, mouth, extra='';
+  if (mood==='win') {
+    eyes=`<circle cx="22" cy="33" r="5.6" fill="#2a2336"/><circle cx="38" cy="33" r="5.6" fill="#2a2336"/>`+
+         `<circle cx="23.8" cy="30.8" r="2.3" fill="#fff"/><circle cx="39.8" cy="30.8" r="2.3" fill="#fff"/>`+
+         `<circle cx="20.4" cy="34.8" r="1.2" fill="#fff"/><circle cx="36.4" cy="34.8" r="1.2" fill="#fff"/>`;
+    mouth=`<path d="M24 41 Q30 48 36 41 Q30 44 24 41 Z" fill="#b5485a"/>`;
+    extra=`<path d="M22 16 L25 9 L28 14 L30 8 L32 14 L35 9 L38 16 Z" fill="#ffd76a" stroke="#e0a92e" stroke-width=".7"/>`+ // crown
+          `<path d="M9 14 l1 2.6 2.6 1 -2.6 1 -1 2.6 -1-2.6 -2.6-1 2.6-1z" fill="#ffe27a"/>`+
+          `<path d="M50 16 l1 2.6 2.6 1 -2.6 1 -1 2.6 -1-2.6 -2.6-1 2.6-1z" fill="#ffe27a"/>`;
+  } else if (mood==='lose') {
+    eyes=`<path d="M18 34 Q22 30.5 26 34" stroke="#2a2336" stroke-width="2.4" fill="none" stroke-linecap="round"/>`+
+         `<path d="M34 34 Q38 30.5 42 34" stroke="#2a2336" stroke-width="2.4" fill="none" stroke-linecap="round"/>`;
+    mouth=`<path d="M25 45 Q30 41 35 45" stroke="#9c5a4a" stroke-width="2.1" fill="none" stroke-linecap="round"/>`;
+    extra=`<path d="M44 31 q3.2 4.2 0 8.4 q-3.2-4.2 0-8.4z" fill="#8fd3ff" opacity=".85"/>`; // sweat drop
+  } else {
+    eyes=`<circle cx="22" cy="33" r="4.7" fill="#2a2336"/><circle cx="38" cy="33" r="4.7" fill="#2a2336"/>`+
+         `<circle cx="23.5" cy="31.4" r="1.9" fill="#fff"/><circle cx="39.5" cy="31.4" r="1.9" fill="#fff"/>`;
+    mouth=`<path d="M26 42.5 Q30 45.5 34 42.5" stroke="#9c5a4a" stroke-width="2" fill="none" stroke-linecap="round"/>`;
+  }
+  return `<svg viewBox="0 0 60 60" width="86" height="86" style="display:block;margin:0 auto">`+
+    `<circle cx="30" cy="26" r="22" fill="${hair}"/>`+
+    `<circle cx="30" cy="33" r="18.5" fill="#ffe1c4"/>`+
+    `<circle cx="16" cy="17" r="8" fill="${hair}"/><circle cx="30" cy="13" r="9" fill="${hair}"/><circle cx="44" cy="17" r="8" fill="${hair}"/>`+
+    `<circle cx="14.5" cy="39" r="3.3" fill="#ff7eb6" opacity=".55"/><circle cx="45.5" cy="39" r="3.3" fill="#ff7eb6" opacity=".55"/>`+
+    eyes+mouth+extra+`</svg>`;
+}
 function showWin(g) {
   const isDraw=g.winner==='draw';
   const winfo=isDraw?null:g.players.find(p=>p.id===g.winner);
   const isMe=g.winner===myId;
-  document.getElementById('winIco').textContent=isDraw?'🤝':isMe?'🏆':'😔';
+  document.getElementById('winIco').innerHTML=winChibiSVG(isDraw?'draw':isMe?'win':'lose');
   document.getElementById('winMsg').textContent=isDraw?'Draw!':isMe?'You Win!':(winfo?.name||'?')+' Wins!';
   let sub=''; if(!isDraw){if(g.winType==='selfDraw')sub='Self Draw (Tsumo!) 🎯'; else if(g.winType==='robKong')sub='Robbing the Kong! (搶槓)'; else sub='By claiming discard';}
   else sub='The wall is exhausted.';
@@ -1706,18 +1735,17 @@ class GameScene extends Phaser.Scene {
       this.txt(cx,statusY+8,statusTxt,{fontSize:'11px',color:statusCol,align:'center'}).setOrigin(0.5,0.5);
     }
 
-    // ── Remaining-wall counter — top-right corner, fully outside the table centre ──
+    // ── Remaining-wall counter — bottom-right, just outside the table centre ──
     {
-      const sw=L.sideW, topY=L.infoH, botY=(L.east&&L.east.y)||z.y;
-      const bw=Math.min(sw-8,68), bh=Math.min(Math.max(botY-topY-10,46),62);
-      const bx=L.W-bw-5, by=topY+6, mid=bx+bw/2;
+      const bw=54, bh=52;
+      const bx=z.x+z.w-bw-3, by=statusY-bh-6, mid=bx+bw/2;
       const wb=this.add.graphics().setDepth(8); this.track(wb);
-      wb.fillStyle(0x140b28,0.75); wb.fillRoundedRect(bx,by,bw,bh,13);
+      wb.fillStyle(0x140b28,0.8); wb.fillRoundedRect(bx,by,bw,bh,13);
       wb.lineStyle(1.5,0xffd166,0.5); wb.strokeRoundedRect(bx,by,bw,bh,13);
       wb.lineStyle(1,0xff9ecd,0.3); wb.strokeRoundedRect(bx+2,by+2,bw-4,bh-4,11);
-      const tc=this.drawTile(mid-9,by+5,null,{w:18,h:22,faceDown:true}); tc.setDepth(9);
-      this.txt(mid,by+bh-16,`${g.wallCount||0}`,{fontSize:'18px',fontStyle:'900',color:'#ffe27a',resolution:2,stroke:'#3a1f00',strokeThickness:3}).setOrigin(0.5).setDepth(10);
-      this.txt(mid,by+bh-4,'left',{fontSize:'9px',color:'#ffd1e6',resolution:2}).setOrigin(0.5).setDepth(10);
+      const tc=this.drawTile(mid-8,by+5,null,{w:16,h:20,faceDown:true}); tc.setDepth(9);
+      this.txt(mid,by+bh-16,`${g.wallCount||0}`,{fontSize:'17px',fontStyle:'900',color:'#ffe27a',resolution:2,stroke:'#3a1f00',strokeThickness:3}).setOrigin(0.5).setDepth(10);
+      this.txt(mid,by+bh-4,'left',{fontSize:'8px',color:'#ffd1e6',resolution:2}).setOrigin(0.5).setDepth(10);
     }
   }
 
