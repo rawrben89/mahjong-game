@@ -155,8 +155,10 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
 .voice-btn .vlabel{position:absolute;top:-15px;left:50%;transform:translateX(-50%);font-size:.58rem;font-weight:700;white-space:nowrap;color:#cbb8e8;text-shadow:0 1px 2px #000;pointer-events:none}
 .voice-btn.off{opacity:.9}
 .voice-btn.ready{background:linear-gradient(180deg,#3a8f5a,#256b3f);border-color:rgba(120,255,170,.5)}
-.voice-btn.live{background:linear-gradient(180deg,#37d87a,#1f9e57);border-color:#aaffcc;transform:scale(1.1);animation:voicepulse 1s infinite}
-@keyframes voicepulse{0%,100%{box-shadow:0 0 0 4px rgba(55,216,122,.35),0 0 18px rgba(55,216,122,.55)}50%{box-shadow:0 0 0 10px rgba(55,216,122,.1),0 0 28px rgba(55,216,122,.75)}}
+.voice-btn.live{background:linear-gradient(180deg,#37d87a,#1f9e57);border-color:#aaffcc;transform:scale(1.1);box-shadow:0 0 0 4px rgba(55,216,122,.3),0 0 18px rgba(55,216,122,.55)}
+/* "Who's talking" pill — subtle, sits just above the voice button */
+#voiceSpeaking{position:fixed;right:14px;bottom:138px;z-index:50;max-width:58vw;padding:5px 11px;border-radius:13px;background:rgba(40,30,70,.9);border:1px solid rgba(120,255,170,.45);color:#dffbe9;font-size:.72rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right;box-shadow:0 2px 10px rgba(0,0,0,.45);pointer-events:none;animation:voiceSpeakIn .18s ease}
+@keyframes voiceSpeakIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .chat-unread{position:absolute;top:-2px;right:-2px;background:#e74c3c;color:#fff;font-size:.62rem;font-weight:700;border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center}
 
 /* ── In-game corner buttons (bottom-left) ───────────────────────────────── */
@@ -414,6 +416,7 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
 
 <!-- Push-to-talk voice (P2P online) -->
 <button id="voiceBtn" class="voice-btn off" style="display:none">🎤<span class="vlabel">Hold to talk</span></button>
+<div id="voiceSpeaking" aria-live="polite" style="display:none"></div>
 <div id="voiceAudio" aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden"></div>
 
 <!-- ── In-game scoreboard ─────────────────────────────────────────────────── -->

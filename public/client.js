@@ -341,7 +341,7 @@ function joinOnline(code) {
         updateVoiceVisibility();
       });
       conn.on('data', raw => { let m; try { m = JSON.parse(raw); } catch { return; }
-        if (m && m.__v==='roster') { voiceApplyRoster(m.ids); return; }
+        if (m && m.__v==='roster') { voiceApplyRoster(m.ids, m.names); return; }
         onMsg(m); });
       conn.on('close', () => { voiceTeardown(); showErr('Disconnected from host.'); showSc('lobbyScreen'); });
     });
@@ -359,6 +359,26 @@ let voiceStream = null;         // local mic MediaStream
 const voiceMembers = new Set(); // host: peer ids currently on voice (incl. host)
 const voiceCalls = {};          // peerId -> PeerJS MediaConnection
 const voiceAudios = {};         // peerId -> <audio> element
+const voiceNames = {};          // peerId -> display name (for "who's talking")
+// ── Speaking detection (Web Audio) — drives the live mic meter + indicators ──
+let voiceAC = null;             // shared AudioContext (lazy, created on user gesture)
+const voiceMeters = {};         // peerId -> {analyser, buf, level, talkUntil}
+let voiceSelfMeter = null;      // {analyser, buf, level} for our own mic
+let voiceRAF = 0;               // requestAnimationFrame handle for the meter loop
+function voiceCtx(){ if (!voiceAC) { try { voiceAC = new (window.AudioContext||window.webkitAudioContext)(); } catch {} } if (voiceAC && voiceAC.state==='suspended') voiceAC.resume().catch(()=>{}); return voiceAC; }
+function voiceMakeMeter(stream){
+  const ac = voiceCtx(); if (!ac) return null;
+  try { const src = ac.createMediaStreamSource(stream); const an = ac.createAnalyser();
+    an.fftSize = 512; an.smoothingTimeConstant = 0.6; src.connect(an);
+    return { src, analyser: an, buf: new Uint8Array(an.fftSize), level: 0, talkUntil: 0 };
+  } catch { return null; }
+}
+function voiceMeterLevel(m){ // 0..1 RMS from the time-domain buffer
+  if (!m || !m.analyser) return 0;
+  m.analyser.getByteTimeDomainData(m.buf);
+  let sum = 0; for (let i=0;i<m.buf.length;i++){ const v=(m.buf[i]-128)/128; sum += v*v; }
+  return Math.sqrt(sum / m.buf.length);
+}
 
 function voiceToast(msg, col){ if (window.phaserScene && window.phaserScene.showToast) window.phaserScene.showToast(msg, col); }
 
@@ -378,24 +398,27 @@ function voiceAttachPeer(peer){
 // Host bookkeeping of who is on voice + broadcasting the roster to everyone
 function voiceSetMember(id, on){ if (!id) return; if (on) voiceMembers.add(id); else voiceMembers.delete(id); }
 function voiceHostSignal(peerId, m){
-  if (m.__v === 'on')  voiceSetMember(peerId, true);
+  if (m.__v === 'on')  { voiceSetMember(peerId, true); if (m.name) voiceNames[peerId] = m.name; }
   if (m.__v === 'off') voiceSetMember(peerId, false);
   voiceBroadcastRoster();
 }
 function voiceBroadcastRoster(){
   if (netRole !== 'host') return;
   const ids = [...voiceMembers];
-  hostConns.forEach(c => { try { c.send(JSON.stringify({ __v:'roster', ids })); } catch {} });
-  voiceApplyRoster(ids); // host is part of the mesh too
+  if (myPeerId) voiceNames[myPeerId] = myName;        // host's own label
+  const names = {}; ids.forEach(id => { if (voiceNames[id]) names[id] = voiceNames[id]; });
+  hostConns.forEach(c => { try { c.send(JSON.stringify({ __v:'roster', ids, names })); } catch {} });
+  voiceApplyRoster(ids, names); // host is part of the mesh too
 }
 // Announce our own voice on/off (host applies locally, peer tells the host)
 function voiceAnnounce(on){
   if (netRole === 'host') { voiceSetMember(myPeerId, on); voiceBroadcastRoster(); }
-  else if (netRole === 'peer') { try { ws.send(JSON.stringify({ __v: on ? 'on' : 'off' })); } catch {} }
+  else if (netRole === 'peer') { try { ws.send(JSON.stringify({ __v: on ? 'on' : 'off', name: myName })); } catch {} }
 }
 
 // Build/tear down the audio mesh from a roster of voice-enabled peer ids
-function voiceApplyRoster(ids){
+function voiceApplyRoster(ids, names){
+  if (names) Object.assign(voiceNames, names);
   const others = (ids || []).filter(id => id && id !== myPeerId);
   if (voiceOn) others.forEach(id => {
     if (voiceCalls[id]) return;
@@ -419,11 +442,13 @@ function voicePlay(id, stream){
   if (!a) { a = document.createElement('audio'); a.autoplay = true; a.playsInline = true;
     (document.getElementById('voiceAudio')||document.body).appendChild(a); voiceAudios[id] = a; }
   a.srcObject = stream; a.play().catch(()=>{});
+  const m = voiceMakeMeter(stream); if (m) { voiceMeters[id] = m; voiceMeterStart(); } // light up "who's talking"
 }
 function voiceCleanup(id){
   try { voiceCalls[id] && voiceCalls[id].close(); } catch {}
   delete voiceCalls[id];
   const a = voiceAudios[id]; if (a) { try { a.srcObject = null; a.remove(); } catch {} delete voiceAudios[id]; }
+  const m = voiceMeters[id]; if (m) { try { m.src.disconnect(); } catch {} delete voiceMeters[id]; }
 }
 
 async function enableVoice(){
@@ -433,6 +458,8 @@ async function enableVoice(){
     voiceStream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true } });
     voiceStream.getAudioTracks().forEach(t => t.enabled = false); // muted until PTT held
     voiceOn = true;
+    voiceSelfMeter = voiceMakeMeter(voiceStream); // live mic level while you talk
+    voiceMeterStart();
     voiceAnnounce(true);
     updateVoiceBtn();
     const alone = (netRole === 'host' && voiceHumanCount === 0);
@@ -444,8 +471,41 @@ function voiceTeardown(){
   voiceAnnounce(false);
   Object.keys(voiceCalls).forEach(voiceCleanup);
   if (voiceStream) { try { voiceStream.getTracks().forEach(t => t.stop()); } catch {} voiceStream = null; }
+  if (voiceSelfMeter) { try { voiceSelfMeter.src.disconnect(); } catch {} voiceSelfMeter = null; }
+  voiceMeterStop();
   voiceOn = false; voiceTalking = false; voiceMembers.clear();
   updateVoiceBtn(); updateVoiceVisibility();
+}
+// ── Meter loop: drives the self mic glow + the "who's talking" indicator ──
+const VOICE_SPEAK_ON = 0.045, VOICE_SPEAK_HOLD = 350; // RMS threshold + linger (ms)
+function voiceMeterStart(){ if (!voiceRAF) voiceRAF = requestAnimationFrame(voiceMeterTick); }
+function voiceMeterStop(){ if (voiceRAF) { cancelAnimationFrame(voiceRAF); voiceRAF = 0; } voiceRenderSpeaking([]); voiceSelfGlow(0); }
+function voiceMeterTick(){
+  const now = performance.now();
+  // Self: live glow from your own mic, only while PTT is held
+  voiceSelfGlow(voiceTalking && voiceSelfMeter ? voiceMeterLevel(voiceSelfMeter) : 0);
+  // Remote peers: collect everyone currently speaking (with a short linger)
+  const speaking = [];
+  for (const id in voiceMeters){
+    const m = voiceMeters[id];
+    if (voiceMeterLevel(m) >= VOICE_SPEAK_ON) m.talkUntil = now + VOICE_SPEAK_HOLD;
+    if (m.talkUntil > now) speaking.push(voiceNames[id] || 'Friend');
+  }
+  voiceRenderSpeaking(speaking);
+  voiceRAF = requestAnimationFrame(voiceMeterTick);
+}
+function voiceSelfGlow(lvl){
+  const btn = document.getElementById('voiceBtn'); if (!btn) return;
+  if (lvl <= 0) { btn.style.boxShadow = ''; return; }
+  const l = Math.min(1, lvl * 3.2);
+  btn.style.boxShadow = `0 0 0 ${(4 + l*12).toFixed(1)}px rgba(55,216,122,${(0.12 + l*0.4).toFixed(2)}),0 0 ${(16 + l*26).toFixed(0)}px rgba(55,216,122,.7)`;
+}
+function voiceRenderSpeaking(names){
+  const el = document.getElementById('voiceSpeaking'); if (!el) return;
+  if (!names.length) { el.style.display = 'none'; el.textContent = ''; return; }
+  const uniq = [...new Set(names)];
+  el.textContent = '🔊 ' + uniq.join(', ') + (uniq.length === 1 ? ' is talking' : ' are talking');
+  el.style.display = 'block';
 }
 function voiceTalkStart(){ if (!voiceOn || voiceTalking) return; voiceTalking = true; if (voiceStream) voiceStream.getAudioTracks().forEach(t => t.enabled = true); updateVoiceBtn(); }
 function voiceTalkEnd(){ if (!voiceTalking) return; voiceTalking = false; if (voiceStream) voiceStream.getAudioTracks().forEach(t => t.enabled = false); updateVoiceBtn(); }
