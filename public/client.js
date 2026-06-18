@@ -646,6 +646,34 @@ function showRules() {
 }
 function hideRules() { document.getElementById('rulesOvl').style.display='none'; }
 
+// ─── How-to-play tutorial (beginner walkthrough) ──────────────────────────────
+const TUTORIAL = [
+  { emoji:'🎴', title:'Welcome to HK Mahjong', html:`Race your opponents to build the best tile hand. Here's everything you need in about a minute — tap <b>Next</b>.` },
+  { emoji:'🎯', title:'The Goal', html:`Make <b>4 sets + 1 pair</b>. A <b>set</b> is three of a kind (a <b>Pung</b>) or three in a run (a <b>Chow</b>); a <b>pair</b> is two identical tiles.`,
+    tiles:[{suit:'circles',value:5},{suit:'circles',value:5},{suit:'circles',value:5},null,{suit:'bamboo',value:3},{suit:'bamboo',value:4},{suit:'bamboo',value:5},null,{suit:'dragon',value:'red'},{suit:'dragon',value:'red'}] },
+  { emoji:'🧩', title:'The Tiles', html:`Three number suits 1–9 — <b>characters</b>, <b>bamboo</b>, <b>circles</b> — plus honor tiles: <b>winds</b> (E/S/W/N) and <b>dragons</b>.`,
+    tiles:[{suit:'characters',value:1},{suit:'bamboo',value:5},{suit:'circles',value:9},null,{suit:'wind',value:'east'},{suit:'dragon',value:'green'}] },
+  { emoji:'👆', title:'Your Turn', html:`You <b>draw</b> a tile automatically, then <b>tap a tile</b> in your hand to discard it — <b>tap again</b> to confirm. Keep what builds sets; throw what doesn't.` },
+  { emoji:'📣', title:'Claiming Discards', html:`When someone throws a tile you need, claim it:<br><b>Pong</b> = triplet · <b>Kong</b> = four of a kind · <b>Chow</b> = a run (from your left) · <b>Win</b> = it completes your hand.` },
+  { emoji:'🏆', title:'Winning', html:`Finish 4 sets + a pair, worth at least <b>3 fan</b> (points), and the <b>WIN</b> button lights up — tap it! Full scoring is in <b>📖 Rules &amp; Fan Table</b>.` },
+  { emoji:'🌸', title:'Bonus & Help', html:`<b>Flowers &amp; seasons</b> score bonus points automatically — you never play them. New here? Switch on <b>💡 Help me play</b> for live hints and best-discard tips.`,
+    tiles:[{suit:'flower',value:1},{suit:'flower',value:2},{suit:'season',value:1},{suit:'season',value:2}] },
+  { emoji:'🚀', title:"You're Ready!", html:`Create a room to play vs bots, or share your room code so friends can join. Have fun! 🎴` },
+];
+let tutIdx = 0;
+function renderTutSlide(i){
+  const s=TUTORIAL[i];
+  const tiles=s.tiles ? `<div class="tut-tiles">${s.tiles.map(t=>t?`<span class="tut-tile">${tileImg(t)}</span>`:'<span class="tut-gap"></span>').join('')}</div>` : '';
+  document.getElementById('tutBody').innerHTML=`<div class="tut-emoji">${s.emoji}</div><h2 class="tut-title">${s.title}</h2><div class="tut-text">${s.html}</div>${tiles}`;
+  document.getElementById('tutDots').innerHTML=TUTORIAL.map((_,k)=>`<span class="tut-dot${k===i?' on':''}"></span>`).join('');
+  document.getElementById('tutBack').style.visibility = i===0 ? 'hidden' : 'visible';
+  document.getElementById('tutNext').textContent = i===TUTORIAL.length-1 ? 'Start Playing →' : 'Next →';
+}
+function showTutorial(){ tutIdx=0; renderTutSlide(0); document.getElementById('tutorialOvl').style.display='block'; }
+function tutNext(){ if(tutIdx>=TUTORIAL.length-1){ closeTutorial(); return; } renderTutSlide(++tutIdx); }
+function tutPrev(){ if(tutIdx>0) renderTutSlide(--tutIdx); }
+function closeTutorial(){ document.getElementById('tutorialOvl').style.display='none'; try{ localStorage.setItem('mj_seen_tutorial','1'); }catch{} }
+
 // ─── In-game scoreboard ───────────────────────────────────────────────────────
 function showScores() {
   if (!G) return;
@@ -1635,5 +1663,7 @@ class GameScene extends Phaser.Scene {
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 { const fab=document.getElementById('chatFloatBtn'); if(fab) fab.style.display='none'; } // game-only
 syncHintSeg(); // reflect the persisted "Help me play" setting in the waiting-room toggle
+// First-time players get the how-to-play walkthrough automatically (once)
+try { if(!localStorage.getItem('mj_seen_tutorial')) setTimeout(showTutorial, 500); } catch {}
 connect();
 setInterval(()=>{ if(document.getElementById('lobbyScreen').classList.contains('active')) refreshRooms(); },12000);
