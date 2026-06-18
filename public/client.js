@@ -573,11 +573,17 @@ function syncHelpBtn(){
 // One-time tip for the current turn (works even when persistent hints are off)
 function requestHelp(){
   if (!G || !(G.myActions||[]).includes('discard')) {
-    if (window.phaserScene) window.phaserScene.showToast('💡 Wait for your turn to discard', '#39d8ff');
+    if (window.phaserScene) window.phaserScene.showToast('💡 Help works on your turn', '#39d8ff');
     return;
   }
   helpOnce = true;
-  if (window.phaserScene) window.phaserScene.refresh(G);
+  if (window.phaserScene) {
+    window.phaserScene.refresh(G);
+    // Clear central feedback so it's obvious the tip applied (the in-hand ring is subtle on phones)
+    const h = computeHint(G.myHand, (G.melds[myId]||[]).length);
+    if (h && h.ready) window.phaserScene.showToast('💡 Ready! Discard the ringed tile\nwaiting on  '+waitsToGlyphs(h.waits), '#39d8ff');
+    else window.phaserScene.showToast('💡 Discard the tile ringed in blue', '#39d8ff');
+  }
 }
 // ─── Rules / Fan Table (mirrors computeFan in game-core.js, sourced from
 //     rawrben89/mahjong-scoreboard) ───────────────────────────────────────────
@@ -702,6 +708,8 @@ function renderActions() {
   // Hide the bottom-left corner row only when interactive claim buttons are up
   // (not during a normal discard turn) so they never overlap on mobile.
   document.body.classList.toggle('actions-on', acts.some(a=>a!=='discard'));
+  // Dim the Help button when it isn't your discard turn (it only helps then)
+  { const hb=document.getElementById('helpBtn'); if(hb) hb.classList.toggle('dim', !acts.includes('discard')); }
   if (!acts.length){bar.innerHTML='';return;}
   const b=[];
   if (acts.includes('win'))        b.push(`<button class="abtn win" onclick="doWin()">🏆 WIN</button>`);
@@ -711,7 +719,7 @@ function renderActions() {
   if (acts.includes('addOnKong'))  b.push(`<button class="abtn kong" onclick="doAddOnKong()">◆ ADD KONG</button>`);
   if (acts.includes('hiddenKong')) b.push(`<button class="abtn kong" onclick="doHiddenKong()">◈ HIDDEN KONG</button>`);
   if (acts.includes('pass'))       b.push(`<button class="abtn pass" onclick="doClaim('pass')">✕ PASS</button>`);
-  if (acts.includes('discard')&&!acts.includes('win')) b.push(`<span class="abtn hint">Tap a tile to discard</span>`);
+  if (acts.includes('discard')&&!acts.includes('win')) b.push(`<span class="abtn hint"><span class="h-lg">Tap a tile to discard</span><span class="h-sm">Tap a tile ↓</span></span>`);
   bar.innerHTML=b.join('');
 }
 
