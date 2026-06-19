@@ -187,8 +187,13 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
 #emoteBar button{width:38px;height:38px;padding:0;font-size:1.3rem;line-height:1;border-radius:10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);box-shadow:none;text-shadow:none;cursor:pointer;transition:transform .08s,background .12s}
 #emoteBar button:hover{background:rgba(57,216,255,.22);transform:scale(1.18)}
 @keyframes emotePop{from{opacity:0;transform:translateY(8px) scale(.92)}to{opacity:1;transform:none}}
-.abtn.timer{background:rgba(30,20,55,.92);border:1px solid rgba(255,158,205,.5);color:#ffd9ec;font-weight:800;min-width:56px;text-align:center}
+.abtn.timer{background:rgba(30,20,55,.92);border:1px solid rgba(255,158,205,.5);color:#ffd9ec;font-weight:800;text-align:center;display:inline-flex;align-items:center;gap:7px;padding:5px 14px 5px 9px}
+.abtn.timer .tt-ring{width:26px;height:26px;display:block;transform:rotate(-90deg);flex:none}
+.abtn.timer .tt-bg{fill:none;stroke:rgba(255,255,255,.15);stroke-width:3.2}
+.abtn.timer .tt-fg{fill:none;stroke:#ff9ecd;stroke-width:3.2;stroke-linecap:round;stroke-dasharray:97.39;stroke-dashoffset:0;transition:stroke-dashoffset .34s linear,stroke .34s linear}
+.abtn.timer .tt-num{min-width:20px;font-variant-numeric:tabular-nums}
 .abtn.timer.urgent{border-color:#ff6b6b;color:#ffd2d2;animation:ttPulse .8s infinite}
+.abtn.timer.urgent .tt-fg{stroke:#ff6b6b}
 @keyframes ttPulse{50%{opacity:.5}}
 #specBadge{position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:14;padding:4px 13px;border-radius:13px;background:rgba(40,30,70,.92);border:1px solid rgba(120,200,255,.55);color:#dbeeff;font-size:.75rem;font-weight:800;box-shadow:0 2px 10px rgba(0,0,0,.45);pointer-events:none}
 

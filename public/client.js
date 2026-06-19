@@ -6,6 +6,7 @@ let lastDrawnTileId = null, prevHandIds = new Set();
 let unreadCount = 0, chatOpen = true, pendingWindBanner = null;
 let phaserGame = null;
 let turnDeadline = null;   // local timestamp when the server will auto-play an idle turn
+let turnTotalMs = 0;       // full length of the current turn, for the countdown ring
 let roomBoard = [];        // running per-room leaderboard (across all hands/matches)
 let isSpectator = false;   // watching a room without a seat
 // Persisted UI settings (sound on by default, hints off by default)
@@ -784,7 +785,15 @@ function onMsg(m) {
       if (!(m.myActions||[]).includes('discard')) helpOnce = false;
       prevG = prev; G = m;
       if (m.leaderboard) roomBoard = m.leaderboard;
-      turnDeadline = (m.turnLeftMs != null) ? Date.now() + m.turnLeftMs : null;
+      // Drive the turn-countdown ring. A deadline that jumps forward (vs. the
+      // small drift of repeated updates within one turn) marks a fresh turn, so
+      // capture its full length for the ring fraction.
+      if (m.turnLeftMs == null) { turnDeadline = null; turnTotalMs = 0; }
+      else {
+        const nd = Date.now() + m.turnLeftMs;
+        if (turnDeadline == null || nd - turnDeadline > 1500) turnTotalMs = m.turnLeftMs;
+        turnDeadline = nd;
+      }
       isSpectator = !!m.spectator;
       updateSpecBadge();
       detectEvents(prev, m);
@@ -1170,18 +1179,33 @@ function renderActions() {
   if (acts.includes('hiddenKong')) b.push(`<button class="abtn kong" onclick="doHiddenKong()">◈ HIDDEN KONG</button>`);
   if (acts.includes('pass'))       b.push(`<button class="abtn pass" onclick="doClaim('pass')">✕ PASS</button>`);
   if (acts.includes('discard')&&!acts.includes('win')) b.push(`<span class="abtn hint"><span class="h-lg">Tap a tile to discard</span><span class="h-sm">Tap a tile ↓</span></span>`);
-  // Countdown while you're on the clock (the server auto-plays an idle turn)
-  if (turnDeadline != null) b.push(`<span class="abtn timer" id="ttChip">⏱ —</span>`);
+  // Countdown ring while you're on the clock (the server auto-plays an idle turn).
+  // Seed the ring offset inline so a rebuilt chip paints at the right position
+  // instead of flashing full and animating down on every state update.
+  if (turnDeadline != null) { const left0=Math.ceil(Math.max(0,turnDeadline-Date.now())/1000); b.push(
+    `<span class="abtn timer${left0<=5?' urgent':''}" id="ttChip" title="Auto-play if you idle">`+
+      `<svg class="tt-ring" viewBox="0 0 36 36" aria-hidden="true">`+
+        `<circle class="tt-bg" cx="18" cy="18" r="15.5"/>`+
+        `<circle class="tt-fg" cx="18" cy="18" r="15.5" style="stroke-dashoffset:${ttOffsetNow()}"/>`+
+      `</svg><span class="tt-num">${left0}</span></span>`); }
   bar.innerHTML=b.join('');
   tickTurnTimer();
 }
-// Live countdown to the server's idle auto-play. Updates the chip rendered above.
+// Live countdown to the server's idle auto-play, drawn as a depleting ring.
+const TT_CIRC=97.39; // 2π·15.5, matches stroke-dasharray in CSS
+function ttOffsetNow(){
+  if (turnDeadline==null) return '0';
+  const remMs=Math.max(0,turnDeadline-Date.now());
+  const frac=turnTotalMs>0 ? Math.max(0,Math.min(1,remMs/turnTotalMs)) : 1;
+  return (TT_CIRC*(1-frac)).toFixed(2);
+}
 function tickTurnTimer(){
   const chip=document.getElementById('ttChip');
   if (!chip) return;
   if (turnDeadline == null){ chip.remove(); return; }
-  const left=Math.max(0, Math.ceil((turnDeadline-Date.now())/1000));
-  chip.textContent='⏱ '+left+'s';
+  const left=Math.ceil(Math.max(0, turnDeadline-Date.now())/1000);
+  const num=chip.querySelector('.tt-num'); if (num) num.textContent=left;
+  const fg=chip.querySelector('.tt-fg'); if (fg) fg.style.strokeDashoffset=ttOffsetNow();
   chip.classList.toggle('urgent', left<=5);
 }
 setInterval(tickTurnTimer, 333);
