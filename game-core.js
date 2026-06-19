@@ -430,6 +430,7 @@ function discardDanger(g, meId, tile) {
 }
 
 function botChooseDiscard(hand, level = 'medium', g = null, pid = null) {
+  if (!hand || !hand.length) return { id: null }; // seat vanished mid-timer (e.g. a human took it over)
   // Defensive context: medium/hard bots avoid feeding a pushing opponent. The
   // weight is how much tile-usefulness a fully-dangerous discard is worth giving
   // up to stay safe. Easy bots (and unit calls without game state) never defend.
@@ -868,7 +869,7 @@ function applyMeld(room, pid, type) {
     g._kongPid = null; g._kongChain = 0; g._afterKongDraw = null;
     g.phase = 'discard';
     sendState(room);
-    if (g.isBot[pid]) setTimeout(() => { const d2 = botChooseDiscard(g.hands[pid], g.botLevel, g, pid); doDiscard(room, pid, d2.id); }, 700);
+    if (g.isBot[pid]) scheduleBotDiscard(room, pid, 700);
   }
 }
 
@@ -892,7 +893,7 @@ function applyChow(room, pid, chowVals) {
   g.awaitingClaims = new Set();
   sendState(room);
   // A bot that just chowed must still discard (mirrors applyMeld for pong)
-  if (g.isBot[pid]) setTimeout(() => { const d2 = botChooseDiscard(g.hands[pid], g.botLevel, g, pid); doDiscard(room, pid, d2.id); }, 700);
+  if (g.isBot[pid]) scheduleBotDiscard(room, pid, 700);
 }
 
 function doDraw(room, pid) {
@@ -922,6 +923,18 @@ function doDiscard(room, pid, tileId) {
   g.lastDiscardBy = pid;
   g.phase = 'claim';
   setupClaims(room);
+}
+
+// Schedule a bot's discard, re-checking at fire time that the seat is still a
+// bot and still owes a discard. This makes a stale timer a safe no-op if the
+// seat changed hands (a human took over a bot seat) before the timer ran.
+function scheduleBotDiscard(room, pid, ms) {
+  setTimeout(() => {
+    const g = room.game;
+    if (!g || !g.isBot[pid] || g.currentPlayer !== pid || g.phase !== 'discard') return;
+    const d = botChooseDiscard(g.hands[pid], g.botLevel, g, pid);
+    if (d.id != null) doDiscard(room, pid, d.id);
+  }, ms);
 }
 
 function doHiddenKong(room, pid, key) {
@@ -1045,7 +1058,7 @@ function botDraw(room) {
     return;
   }
   sendState(room);
-  setTimeout(() => { const d = botChooseDiscard(g.hands[pid], g.botLevel, g, pid); doDiscard(room, pid, d.id); }, 700);
+  scheduleBotDiscard(room, pid, 700);
 }
 
 // ─── Room / game management ──────────────────────────────────────────────────
@@ -1103,7 +1116,34 @@ function startGame(room, withBots) {
   sendState(room);
 
   if (room.game.isBot[room.game.currentPlayer]) {
-    setTimeout(() => { const cp = room.game.currentPlayer; const d = botChooseDiscard(room.game.hands[cp], room.game.botLevel, room.game, cp); doDiscard(room, cp, d.id); }, 1000);
+    scheduleBotDiscard(room, room.game.currentPlayer, 1000);
+  }
+}
+
+// Move a seat from one engine id to another across every id-keyed bit of game +
+// room state. Used when a human takes over a bot's seat mid-hand: the human keeps
+// their own (non-bot) id, so the `bot-` id disappears entirely and nothing else
+// (re-botification by id prefix, leaderboard, scores) has to special-case it.
+function reseatPlayer(room, oldId, newId) {
+  const g = room.game;
+  if (!g || oldId === newId) return;
+  const idx = g.players.indexOf(oldId);
+  if (idx !== -1) g.players[idx] = newId;
+  for (const map of [g.hands, g.bonus, g.melds, g.discards, g.scores, g.handScores,
+                     g.seatWinds, g.pendingClaims, g.claimChowVals]) {
+    if (map && oldId in map) { map[newId] = map[oldId]; delete map[oldId]; }
+  }
+  if (g.awaitingClaims && g.awaitingClaims.delete(oldId)) g.awaitingClaims.add(newId);
+  for (const k of ['currentPlayer', 'lastDiscardBy', 'winner', '_kongPid', '_supp', '_afterKongDraw']) {
+    if (g[k] === oldId) g[k] = newId;
+  }
+  delete g.isBot[oldId]; // the new occupant is a human, not a bot
+  if (room.matchScores && oldId in room.matchScores) {
+    room.matchScores[newId] = room.matchScores[oldId]; delete room.matchScores[oldId];
+  }
+  if (room.basePlayerOrder) {
+    const bi = room.basePlayerOrder.indexOf(oldId);
+    if (bi !== -1) room.basePlayerOrder[bi] = newId;
   }
 }
 
@@ -1194,8 +1234,25 @@ function handleMsg(ws, player, msg) {
       if (room.players.length === 4) startGame(room, false);
       return;
     }
-    // Game already in progress → join as a read-only spectator.
+    // Game already in progress. If a bot is filling a seat, hand it to this human
+    // (they inherit the bot's hand/seat) instead of forcing them to spectate —
+    // covers "host started with bots before everyone joined" and a reconnect that
+    // fell back to joinRoom. Otherwise join as a read-only spectator.
     player.roomId = room.id;
+    const g = room.game;
+    const botSeat = g && room.players.find(p => g.isBot[p.id]);
+    if (botSeat) {
+      const seatId = botSeat.id;
+      reseatPlayer(room, seatId, player.id); // give the seat the human's own (non-bot) id
+      room.players[room.players.indexOf(botSeat)] = player; // keeps player.id + resumeToken
+      send(ws, { type: 'roomJoined', roomId: room.id,
+        players: room.players.map(p => ({ id: p.id, name: p.name })) });
+      send(ws, { type: 'gameStarted' });
+      broadcastRoom(room, { type: 'chat', from: 'System', pid: 'system',
+        text: `${player.name} took over ${botSeat.name}'s seat.`, ts: Date.now() });
+      sendState(room); // everyone re-renders; the new human gets their hand
+      return;
+    }
     player.spectator = true;
     room.players.push(player);
     send(ws, { type: 'roomJoined', roomId: room.id, spectator: true,
