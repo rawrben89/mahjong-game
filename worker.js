@@ -25,6 +25,34 @@ export default {
       const id = env.LOBBY.idFromName('global');
       return env.LOBBY.get(id).fetch(request);
     }
+    // Mint short-lived Cloudflare TURN credentials so voice relays through a
+    // reliable TURN server — required for peers on cellular / strict NAT, where
+    // a direct (STUN-only) connection is impossible. CORS-open so the static
+    // Pages/P2P build can fetch these cross-origin too.
+    if (url.pathname === '/turn') {
+      const cors = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET,OPTIONS',
+        'Access-Control-Allow-Headers': '*',
+      };
+      const json = (body, status = 200) =>
+        new Response(body, { status, headers: { 'Content-Type': 'application/json', ...cors } });
+      if (request.method === 'OPTIONS') return new Response(null, { headers: cors });
+      if (!env.TURN_KEY_ID || !env.TURN_KEY_API_TOKEN) return json('{"iceServers":[]}');
+      try {
+        const r = await fetch(
+          `https://rtc.live.cloudflare.com/v1/turn/keys/${env.TURN_KEY_ID}/credentials/generate-ice-servers`,
+          {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${env.TURN_KEY_API_TOKEN}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ttl: 86400 }),
+          },
+        );
+        return json(await r.text(), r.ok ? 200 : r.status);
+      } catch {
+        return json('{"iceServers":[]}');
+      }
+    }
     return env.ASSETS.fetch(request);
   },
 };

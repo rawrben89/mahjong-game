@@ -283,8 +283,9 @@ function hostOnline() {
     startHostPeer(core);
   });
 }
-function startHostPeer(core){
+async function startHostPeer(core){
   try {
+    await fetchIce(); PEER_OPTS.config.iceServers = iceConfig().iceServers; // TURN for cellular peers
     peerObj = new window.Peer(PEER_PREFIX + shareCode, PEER_OPTS);
     peerObj.on('open', id => { myPeerId = id; });
     voiceAttachPeer(peerObj);
@@ -325,8 +326,9 @@ function hostAcceptPeer(core, conn) {
 // ── LOCAL_MODE peer: connect to a host and talk to it like a server ──
 function joinOnline(code) {
   if (!code) { showErr('Enter a room code'); return; }
-  whenLocalReady(() => {
+  whenLocalReady(async () => {
     shareCode = code; netRole = 'peer';
+    await fetchIce(); PEER_OPTS.config.iceServers = iceConfig().iceServers; // TURN for cellular peers
     peerObj = new window.Peer(PEER_OPTS);
     voiceAttachPeer(peerObj);
     peerObj.on('open', (id) => {
@@ -363,6 +365,23 @@ const voiceAudios = {};         // peerId -> <audio> element
 const voiceNames = {};          // peerId -> display name (for "who's talking")
 const voicePCs = {};            // WS mode: playerId -> RTCPeerConnection
 const RTC_CFG = PEER_OPTS.config; // reuse the same STUN/TURN ice servers
+const BASE_ICE = RTC_CFG.iceServers.slice(); // STUN + public-TURN fallback
+// Cloudflare TURN: the Worker mints short-lived credentials at /turn. Cellular
+// / strict-NAT peers can only connect through a relay, and these are far more
+// reliable than the free public TURN. On the static Pages build we fetch them
+// cross-origin from the deployed Worker.
+const TURN_API = (location.hostname.endsWith('workers.dev') ? '' : 'https://hk-mahjong.rawrben89.workers.dev') + '/turn';
+let _ice = null, _iceAt = 0;
+async function fetchIce(){
+  if (_ice && Date.now() - _iceAt < 6*60*60*1000) return _ice; // creds live ~24h
+  try {
+    const r = await fetch(TURN_API);
+    if (r.ok){ const j = await r.json(); if (j && Array.isArray(j.iceServers) && j.iceServers.length){ _ice = j.iceServers; _iceAt = Date.now(); } }
+  } catch {}
+  return _ice;
+}
+// Cloudflare relay first, then the STUN/public-TURN fallback. Idempotent.
+function iceConfig(){ return { iceServers: [ ...(_ice || []), ...BASE_ICE ] }; }
 // ── Speaking detection ──
 // Self mic level uses a Web Audio AnalyserNode (the local mic always decodes).
 // Remote "who's talking" is driven by the push-to-talk state each peer
@@ -449,7 +468,7 @@ function voiceApplyRosterWS(members){
 function wsVoiceConnect(peerId, initiator){
   if (voicePCs[peerId]) return voicePCs[peerId];
   let pc;
-  try { pc = new RTCPeerConnection(RTC_CFG); } catch { return null; }
+  try { pc = new RTCPeerConnection(iceConfig()); } catch { return null; }
   voicePCs[peerId] = pc;
   if (voiceStream) voiceStream.getTracks().forEach(t => { try { pc.addTrack(t, voiceStream); } catch {} });
   pc.onicecandidate = e => { if (e.candidate) tx({ type:'voiceSignal', to:peerId, data:{ candidate:e.candidate } }); };
@@ -542,7 +561,8 @@ async function enableVoice(goLive){
   }
   try {
     voiceStream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true } });
-    voiceStream.getAudioTracks().forEach(t => t.enabled = false); // muted until PTT held
+    voiceStream.getAudioTracks().forEach(t => t.enabled = false); // muted until you go live
+    await fetchIce(); // grab Cloudflare TURN creds before the mesh negotiates (cellular needs a relay)
     voiceOn = true;
     voiceSelfMeter = voiceMakeMeter(voiceStream); // live mic level while you talk
     voiceMeterStart();
