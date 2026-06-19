@@ -1,4 +1,4 @@
-import { chromium } from './node_modules/playwright/index.mjs';
+import { chromium } from 'playwright';
 
 const br = await chromium.launch({ headless: true });
 const page = await br.newPage();

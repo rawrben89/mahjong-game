@@ -971,8 +971,18 @@ function startGame(room, withBots) {
   }
 }
 
+const MAX_ROOMS = 500;           // cap total live rooms (abuse / cost guard)
+const MSG_WINDOW_MS = 1000;      // sliding window for the per-connection flood guard
+const MSG_MAX_PER_WINDOW = 60;   // generous: legit play + voice ICE bursts stay well under
+
 function handleMsg(ws, player, msg) {
-  if (!player) return;
+  if (!player || !msg || typeof msg !== 'object') return;
+  // Per-connection flood guard: drop messages once a client exceeds the rate.
+  // 60/sec easily covers gameplay + WebRTC signalling but kills runaway loops.
+  const now = Date.now();
+  player._mq = (player._mq || []).filter(t => now - t < MSG_WINDOW_MS);
+  if (player._mq.length >= MSG_MAX_PER_WINDOW) return;
+  player._mq.push(now);
   const { type } = msg;
 
   if (type === 'setName') {
@@ -1019,7 +1029,11 @@ function handleMsg(ws, player, msg) {
 
   if (type === 'createRoom') {
     if (player.roomId) return;
-    const rid = Math.random().toString(36).slice(2, 8).toUpperCase();
+    if (rooms.size >= MAX_ROOMS) { send(ws, { type: 'error', msg: 'Server is busy — try again shortly' }); return; }
+    // Regenerate on the (rare) chance of colliding with a live room so we never
+    // silently evict an in-progress game.
+    let rid;
+    do { rid = Math.random().toString(36).slice(2, 8).toUpperCase(); } while (rooms.has(rid));
     const room = { id: rid, players: [player], state: 'waiting', game: null, seatRotation: 0, basePlayerOrder: null };
     rooms.set(rid, room);
     player.roomId = rid;

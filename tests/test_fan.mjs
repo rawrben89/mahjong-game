@@ -1,4 +1,4 @@
-import { computeFan, MIN_FAN } from './game-core.js';
+import { computeFan, MIN_FAN } from '../game-core.js';
 const T=(s,v)=>({suit:s,value:v});
 const seq=(s,a)=>[T(s,a),T(s,a+1),T(s,a+2)];
 const tri=(s,v)=>[T(s,v),T(s,v),T(s,v)];

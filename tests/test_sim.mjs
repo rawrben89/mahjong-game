@@ -1,4 +1,4 @@
-import { attachPlayer, handleRaw } from './game-core.js';
+import { attachPlayer, handleRaw } from '../game-core.js';
 function fakeWs(){ const msgs=[]; return {readyState:1,msgs,send(s){msgs.push(JSON.parse(s));}}; }
 const ws=fakeWs(); attachPlayer(ws);
 handleRaw(ws, JSON.stringify({type:'setName',name:'Sim'}));

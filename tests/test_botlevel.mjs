@@ -1,4 +1,4 @@
-import { attachPlayer, handleRaw } from './game-core.js';
+import { attachPlayer, handleRaw } from '../game-core.js';
 function fakeWs(){ const m=[]; return {readyState:1,msgs:m,send(s){m.push(JSON.parse(s));}}; }
 for (const level of ['easy','hard']) {
   const ws=fakeWs(); attachPlayer(ws);

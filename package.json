@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
+    "test": "node tests/test_fan.mjs",
     "deploy": "wrangler deploy"
   },
   "engines": {

@@ -16,7 +16,11 @@ Empty seats are filled with bots when the host starts.
 ```sh
 npm install
 npm start            # → http://localhost:3000
+npm test             # scoring unit tests (tests/test_fan.mjs)
 ```
+
+Other scripts under `tests/` are Playwright e2e flows and game-sim harnesses
+(run individually, e.g. `node tests/test_rotate.mjs`).
 
 Friends on the same Wi-Fi can join via the "Network" URL printed at startup.
 

@@ -350,12 +350,12 @@ function joinOnline(code) {
   });
 }
 
-// ─── Live voice (push-to-talk) for P2P online play ───────────────────────────
-// A small WebRTC audio mesh over the existing PeerJS peers. The mic stream is
-// captured once and its track stays disabled (muted) until the user holds the
-// push-to-talk button, so toggling is instant with no renegotiation.
+// ─── Live voice (tap-to-toggle mute) for online play ─────────────────────────
+// A small WebRTC audio mesh over the existing peers. The mic stream is captured
+// once and its track is enabled/disabled (unmuted/muted) on each tap of the mic
+// button, so toggling is instant with no renegotiation.
 let voiceOn = false;            // mic captured / in the voice mesh
-let voiceTalking = false;       // PTT currently held
+let voiceTalking = false;       // currently transmitting (unmuted)
 let voiceStream = null;         // local mic MediaStream
 const voiceMembers = new Set(); // host: peer ids currently on voice (incl. host)
 const voiceCalls = {};          // peerId -> PeerJS MediaConnection
@@ -531,7 +531,7 @@ function voiceCleanup(id){
   delete voiceRemoteTalking[id];
 }
 
-async function enableVoice(){
+async function enableVoice(goLive){
   if (voiceOn) return;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     // Browsers only expose the mic in a "secure context": HTTPS or localhost.
@@ -548,11 +548,19 @@ async function enableVoice(){
     voiceMeterStart();
     voiceAnnounce(true);    // join the roster → both sides build the mesh
     voiceUnlockAudio();     // this tap is a gesture — unlock any pending playback
+    // Tap-to-toggle: the first tap that enabled the mic also takes you live, so
+    // a single tap "just works" instead of needing a press-and-hold.
+    if (goLive) voiceTalkStart();
     updateVoiceBtn();
     const alone = (netRole === 'host' && voiceHumanCount === 0);
     voiceToast(alone ? '🎤 Voice ready — friends hear you once they join'
-                     : '🎤 Voice on — hold the mic (or Space) to talk', '#5dde8b');
+                     : '🎤 Voice on — tap the mic (or Space) to mute/unmute', '#5dde8b');
   } catch { voiceToast('Mic permission denied','#e74c3c'); }
+}
+// Single tap toggles between live and muted (first tap enables + goes live).
+function voiceToggle(){
+  if (!voiceOn) { enableVoice(true); return; }
+  if (voiceTalking) voiceTalkEnd(); else voiceTalkStart();
 }
 function voiceTeardown(){
   voiceAnnounce(false);
@@ -630,25 +638,23 @@ function updateVoiceBtn(){
   btn.classList.toggle('off', !voiceOn);
   btn.classList.toggle('ready', voiceOn && !voiceTalking);
   btn.classList.toggle('live', voiceTalking);
-  const label = !voiceOn ? 'Tap for voice' : voiceTalking ? 'Talking…' : 'Hold to talk';
+  const label = !voiceOn ? 'Tap for voice' : voiceTalking ? 'Talking — tap to mute' : 'Muted — tap to talk';
   btn.title = label;
   const lab = btn.querySelector('.vlabel'); if (lab) lab.textContent = label;
 }
 // Wire the push-to-talk button + spacebar once
 function voiceInitButton(){
   const btn = document.getElementById('voiceBtn'); if (!btn || btn._wired) return; btn._wired = true;
-  const down = e => { e.preventDefault(); if (!voiceOn) { enableVoice(); return; } voiceTalkStart(); };
-  const up   = e => { e.preventDefault(); voiceTalkEnd(); };
-  btn.addEventListener('pointerdown', down);
-  btn.addEventListener('pointerup', up);
-  btn.addEventListener('pointercancel', up);
-  btn.addEventListener('pointerleave', up);
+  // Tap-to-toggle (was hold-to-talk): a single tap enables the mic + goes live,
+  // and each subsequent tap mutes/unmutes. The mic stays granted and the WebRTC
+  // mesh stays connected the whole time, so toggling is instant (no per-talk
+  // reconnect delay). 'click' is a valid user gesture for getUserMedia on iOS.
+  btn.addEventListener('click', e => { e.preventDefault(); voiceToggle(); });
   // "Tap to enable audio" — iOS gesture to start blocked remote playback
   const unlock = document.getElementById('voiceUnlock');
   if (unlock) unlock.addEventListener('pointerdown', e => { e.preventDefault(); voiceUnlockAudio(); });
-  // Spacebar = push-to-talk on desktop (when voice is enabled and in-game)
-  window.addEventListener('keydown', e => { if (e.code==='Space' && voiceOn && !e.repeat && voiceCanUse() && document.activeElement?.tagName!=='INPUT') { e.preventDefault(); voiceTalkStart(); } });
-  window.addEventListener('keyup',   e => { if (e.code==='Space' && voiceTalking) { e.preventDefault(); voiceTalkEnd(); } });
+  // Spacebar = tap-to-toggle on desktop (when voice is enabled and in-game)
+  window.addEventListener('keydown', e => { if (e.code==='Space' && voiceOn && !e.repeat && voiceCanUse() && document.activeElement?.tagName!=='INPUT') { e.preventDefault(); voiceToggle(); } });
 }
 
 function connect() {
