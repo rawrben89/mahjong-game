@@ -1,0 +1,15 @@
+{
+  "name": "HK Mahjong",
+  "short_name": "Mahjong",
+  "description": "Hong Kong Mahjong — play solo vs bots or online with friends.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#170d2e",
+  "theme_color": "#1a1033",
+  "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#1a1033">
+<title>中 HK Mahjong</title>
+<link rel="icon" type="image/svg+xml" href="assets/tiles/d1.svg">
+<link rel="apple-touch-icon" href="assets/icon-192.png">
+<link rel="manifest" href="manifest.json">
+<script>if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;900&display=swap" rel="stylesheet">
+<script src="assets/vendor/phaser.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;height:100dvh;overflow:hidden;overscroll-behavior:none;background:radial-gradient(120% 90% at 50% -10%, #3a1f63 0%, #251247 45%, #150b2b 100%);font-family:'M PLUS Rounded 1c','Segoe UI',system-ui,sans-serif;color:#fff;-webkit-tap-highlight-color:transparent}
+
+.deco-tiles{display:flex;justify-content:center;gap:6px;margin:4px 0}
+.deco-tiles img{width:34px;height:41px;filter:drop-shadow(0 4px 6px rgba(0,0,0,.45));animation:tiledance 2.4s ease-in-out infinite;transform-origin:50% 95%}
+.deco-tiles img:nth-child(1){animation-delay:0s}
+.deco-tiles img:nth-child(2){animation-delay:.16s}
+.deco-tiles img:nth-child(3){animation-delay:.32s}
+.deco-tiles img:nth-child(4){animation-delay:.48s}
+.deco-tiles img:nth-child(5){animation-delay:.64s}
+.deco-tiles img:nth-child(6){animation-delay:.8s}
+.deco-tiles img:nth-child(7){animation-delay:.96s}
+@keyframes tiledance{0%,100%{transform:translateY(0) rotate(-7deg) scale(1)}50%{transform:translateY(-13px) rotate(7deg) scale(1.07)}}
+
+/* Decorative sakura petals behind the menus */
+#petals{position:fixed;inset:0;z-index:1;pointer-events:none;overflow:hidden}
+#petals i{position:absolute;top:-24px;width:13px;height:13px;background:radial-gradient(circle at 30% 30%,#ffd1e6,#ff9ecd);border-radius:60% 0 60% 0;opacity:.5;animation:petalfall linear infinite}
+@keyframes petalfall{0%{transform:translateY(-24px) rotate(0)}100%{transform:translateY(102vh) rotate(540deg)}}
+
+/* ── Pre-game screens ──────────────────────────────────────────────────── */
+.screen{display:none;position:fixed;top:0;left:0;right:0;height:100vh;height:100dvh;z-index:20;overflow-y:auto}
+.screen.active{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:20px}
+#gameScreen.active{display:flex;flex-direction:row;padding:0;gap:0;overflow:hidden}
+
+.card{position:relative;background:linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,.05));border:2px solid rgba(255,255,255,.18);border-radius:30px;padding:30px 28px;width:min(420px,94vw);display:flex;flex-direction:column;gap:12px;box-shadow:0 26px 64px rgba(0,0,0,.5),inset 0 2px 0 rgba(255,255,255,.16);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);animation:cardin .5s cubic-bezier(.34,1.56,.64,1) both}
+
+/* Chibi mascot trio (inline-SVG cuties) on the menu cards */
+.chibi-row{display:flex;justify-content:center;align-items:flex-end;gap:10px;margin:2px 0 4px}
+.chibi{width:48px;height:auto;filter:drop-shadow(0 4px 6px rgba(0,0,0,.4));animation:chibibob 2.8s ease-in-out infinite;transform-origin:50% 100%}
+.chibi:nth-child(2){animation-delay:.45s}
+.chibi:nth-child(3){animation-delay:.9s}
+@keyframes chibibob{0%,100%{transform:translateY(0) rotate(-3deg) scale(1,1)}50%{transform:translateY(-7px) rotate(3deg) scale(1.04,.97)}}
+.card::before{content:'';position:absolute;top:0;left:18%;right:18%;height:2px;background:linear-gradient(90deg,transparent,#ff9ecd,#c98fff,transparent);border-radius:2px}
+@keyframes cardin{from{opacity:0;transform:translateY(14px) scale(.97)}}
+.card h1{font-size:2.3rem;text-align:center;background:linear-gradient(90deg,#fff 0%,#ffd1e6 50%,#cbb3ff 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:1px;font-weight:900;margin-top:2px}
+.card h2{font-size:1.4rem;text-align:center}
+.card h3{font-size:.85rem;opacity:.6;margin-top:4px}
+
+/* Red-dragon (中) hero emblem on the home/lobby cards */
+.logo-emblem{position:relative;align-self:center;width:96px;height:96px;border-radius:24px;display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(120% 120% at 30% 20%,#fff7f2,#ffe3d6 35%,#f6cfc4 100%);
+  box-shadow:0 10px 26px rgba(214,40,40,.35),inset 0 2px 0 rgba(255,255,255,.9),inset 0 -6px 12px rgba(180,60,40,.18);
+  border:1px solid rgba(255,255,255,.7);animation:emblemFloat 4s ease-in-out infinite}
+.logo-emblem.sm{width:74px;height:74px;border-radius:19px}
+.logo-emblem::after{content:'';position:absolute;inset:-7px;border-radius:30px;background:radial-gradient(closest-side,rgba(255,90,90,.45),transparent 75%);z-index:-1;filter:blur(3px)}
+.logo-glyph{font-weight:900;font-size:3.4rem;line-height:1;
+  background:linear-gradient(180deg,#ff4d4d 0%,#d62828 55%,#a51d1d 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 1px 0 rgba(255,255,255,.6))}
+.logo-emblem.sm .logo-glyph{font-size:2.7rem}
+@keyframes emblemFloat{0%,100%{transform:translateY(0) rotate(-2.5deg) scale(1,1)}50%{transform:translateY(-8px) rotate(2.5deg) scale(1.05,.96)}}
+
+input{padding:11px 15px;border-radius:13px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.07);color:#fff;font-size:.95rem;outline:none;width:100%}
+input::placeholder{opacity:.38}
+input:focus{border-color:#ff9ecd}
+
+button{padding:11px 18px;border-radius:16px;border:1px solid rgba(255,255,255,.25);background:linear-gradient(135deg,#ff8fc7,#c98fff);color:#fff;font-family:inherit;font-weight:800;font-size:.9rem;letter-spacing:.3px;cursor:pointer;transition:transform .16s cubic-bezier(.34,1.56,.64,1),filter .14s,box-shadow .14s;width:100%;box-shadow:0 3px 12px rgba(255,143,199,.25);text-shadow:0 1px 2px rgba(0,0,0,.25)}
+button:hover{filter:brightness(1.12);transform:translateY(-2px) scale(1.03);box-shadow:0 6px 18px rgba(255,143,199,.45)}
+button:active{transform:translateY(0) scale(.94)}
+button.sec{background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.15);box-shadow:none;text-shadow:none}
+button.sec:hover{background:rgba(255,255,255,.18);box-shadow:none}
+button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba(231,76,60,.3)}
+
+/* Segmented control (bot difficulty) */
+.seg{display:flex;gap:0;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:3px;width:100%}
+.seg-btn{flex:1;width:auto;padding:7px 4px;font-size:.82rem;font-weight:700;border:none;border-radius:7px;background:transparent;color:rgba(255,255,255,.6);box-shadow:none;text-shadow:none;letter-spacing:.2px;transition:all .14s}
+.seg-btn:hover{background:rgba(255,255,255,.06);color:#fff;transform:none;box-shadow:none}
+.seg-btn.on{background:linear-gradient(135deg,#ff8fc7,#c98fff);color:#fff;box-shadow:0 2px 8px rgba(255,143,199,.35)}
+
+.sep{height:1px;background:rgba(255,255,255,.12);margin:2px 0}
+.err{color:#e74c3c;font-size:.82rem;text-align:center;min-height:16px}
+.inf{color:#ff9ecd;font-size:.82rem;text-align:center}
+
+.pchip{background:rgba(255,255,255,.09);border-radius:16px;padding:7px 13px;display:flex;align-items:center;gap:10px;font-size:.92rem}
+.bot-badge{font-size:.65rem;background:#e67e22;color:#fff;border-radius:3px;padding:1px 5px}
+.room-row{background:rgba(255,255,255,.06);border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:background .14s}
+.room-row:hover{background:rgba(255,255,255,.13)}
+.room-row button{width:auto;padding:5px 12px;font-size:.8rem}
+
+/* ── Game screen layout ────────────────────────────────────────────────── */
+#gameArea{flex:1;min-width:0;position:relative;overflow:hidden;display:flex;flex-direction:column}
+#phaserMount{flex:1;min-height:0;overflow:hidden}
+#phaserMount canvas{display:block}
+
+/* Action overlay sits at bottom of game area */
+#actionOverlay{
+  position:absolute;bottom:0;left:0;right:0;
+  display:flex;align-items:center;justify-content:center;flex-wrap:wrap;
+  gap:7px;padding:6px 10px;min-height:52px;
+  background:linear-gradient(transparent,rgba(0,0,0,.55));
+  pointer-events:none;z-index:10
+}
+#actionOverlay .abtn{
+  padding:10px 22px;border-radius:24px;font-weight:800;font-size:.92rem;
+  letter-spacing:.6px;cursor:pointer;border:1.5px solid rgba(255,255,255,.35);
+  transition:filter .14s,transform .14s,box-shadow .14s;pointer-events:all;flex-shrink:0;color:#fff;
+  text-shadow:0 1px 2px rgba(0,0,0,.35);box-shadow:0 3px 10px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.22);
+  animation:abtnin .22s cubic-bezier(.2,.9,.3,1.3) both
+}
+#actionOverlay .abtn:hover{filter:brightness(1.18);transform:translateY(-2px);box-shadow:0 6px 16px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.25)}
+#actionOverlay .abtn:active{transform:scale(.95)}
+.abtn.hint{animation:none}
+@keyframes abtnin{from{opacity:0;transform:translateY(10px) scale(.9)}}
+.abtn.win  {background:linear-gradient(135deg,#ff4d6d,#c0392b);box-shadow:0 0 18px rgba(255,77,109,.55);animation:pulse 1s infinite}
+.abtn.pong {background:linear-gradient(135deg,#b06ab3,#8e44ad)}
+.abtn.kong {background:linear-gradient(135deg,#f5a623,#d35400)}
+.abtn.chow {background:linear-gradient(135deg,#42c97a,#27ae60)}
+.abtn.pass {background:rgba(255,255,255,.13);border-color:rgba(255,255,255,.22);box-shadow:none}
+.abtn.hint {background:transparent;border-color:rgba(255,255,255,.18);color:rgba(255,255,255,.45);font-size:.78rem;padding:5px 12px;pointer-events:none;text-shadow:none;box-shadow:none}
+/* Inline triplet icon on the Pong button (three matching tiles) */
+.abtn .ic-pong{height:1.25em;width:auto;vertical-align:-.26em;margin-right:6px;filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.4))}
+.abtn.hint .h-sm{display:none}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,77,109,.7)}50%{box-shadow:0 0 0 9px rgba(255,77,109,0)}}
+
+/* ── Chat panel (slide-in overlay so the board is always full-width) ─────── */
+.chat-panel{position:fixed;top:0;right:0;bottom:0;width:min(300px,86vw);z-index:80;display:flex;flex-direction:column;background:rgba(20,12,40,.96);border-left:1px solid rgba(255,255,255,.1);box-shadow:-8px 0 30px rgba(0,0,0,.5);overflow:hidden;transform:translateX(100%);transition:transform .22s ease}
+.chat-panel.open{transform:translateX(0)}
+.chat-header{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0}
+.chat-header span{font-weight:700;font-size:.88rem}
+.chat-toggle-btn{width:auto;flex:none;background:rgba(255,255,255,.1);border:none;color:#fff;border-radius:8px;padding:4px 10px;cursor:pointer;font-size:.9rem;line-height:1;box-shadow:none;text-shadow:none}
+.chat-toggle-btn:hover{background:rgba(255,255,255,.2);transform:none;box-shadow:none}
+.chat-msgs{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:7px}
+.chat-msg{display:flex;flex-direction:column;gap:2px}
+.chat-msg .from{font-size:.7rem;font-weight:700;color:#ff9ecd;opacity:.85}
+.chat-msg.me .from{color:#f39c12;text-align:right}
+.chat-msg .text{background:rgba(255,255,255,.1);border-radius:10px;border-bottom-left-radius:3px;padding:5px 9px;font-size:.83rem;line-height:1.4;word-break:break-word}
+.chat-msg.me .text{background:rgba(255,158,205,.18);text-align:right;border-bottom-left-radius:10px;border-bottom-right-radius:3px}
+.chat-msg.system .text{background:rgba(241,196,15,.1);color:#f1c40f;font-style:italic;font-size:.76rem;text-align:center;border-radius:8px}
+.chat-input-row{display:flex;gap:6px;padding:7px 9px;border-top:1px solid rgba(255,255,255,.07);flex-shrink:0}
+.chat-input-row input{flex:1;padding:7px 11px;font-size:.86rem;border-radius:18px}
+.chat-input-row button{padding:7px 13px;border-radius:18px;font-size:.82rem;flex-shrink:0;width:auto}
+
+/* Floating chat button (all screen sizes, in-game) */
+.chat-float-btn{position:fixed;bottom:14px;right:14px;z-index:50;background:#ff9ecd;color:#2a1040;border:none;border-radius:50%;width:46px;height:46px;font-size:1.2rem;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;transition:transform .14s}
+.chat-float-btn:hover{transform:scale(1.1)}
+/* Push-to-talk voice button */
+/* --voicebtm controls how high the mic + its pills float; raised on mobile so
+   it clears the hand tiles (see @media below). */
+:root{--voicebtm:70px}
+.voice-btn{position:fixed;right:14px;bottom:var(--voicebtm);z-index:50;width:58px;height:58px;border-radius:50%;border:2px solid rgba(255,255,255,.3);background:rgba(40,30,70,.88);color:#fff;font-size:1.45rem;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 12px rgba(0,0,0,.5);transition:transform .12s,box-shadow .12s,background .12s;touch-action:none;-webkit-user-select:none;user-select:none}
+.voice-btn .vlabel{position:absolute;top:-15px;left:50%;transform:translateX(-50%);font-size:.58rem;font-weight:700;white-space:nowrap;color:#cbb8e8;text-shadow:0 1px 2px #000;pointer-events:none}
+.voice-btn.off{opacity:.9}
+.voice-btn.ready{background:linear-gradient(180deg,#3a8f5a,#256b3f);border-color:rgba(120,255,170,.5)}
+.voice-btn.live{background:linear-gradient(180deg,#37d87a,#1f9e57);border-color:#aaffcc;transform:scale(1.1);box-shadow:0 0 0 4px rgba(55,216,122,.3),0 0 18px rgba(55,216,122,.55)}
+/* "Who's talking" pill — subtle, sits just above the voice button */
+#voiceSpeaking{position:fixed;right:14px;bottom:calc(var(--voicebtm) + 68px);z-index:50;max-width:58vw;padding:5px 11px;border-radius:13px;background:rgba(40,30,70,.9);border:1px solid rgba(120,255,170,.45);color:#dffbe9;font-size:.72rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right;box-shadow:0 2px 10px rgba(0,0,0,.45);pointer-events:none;animation:voiceSpeakIn .18s ease}
+@keyframes voiceSpeakIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+/* "Tap to enable audio" — iOS unlock affordance, shown only when blocked */
+#voiceUnlock{position:fixed;right:14px;bottom:calc(var(--voicebtm) + 110px);z-index:51;width:auto;padding:8px 14px;border-radius:16px;border:1px solid rgba(255,205,120,.6);background:linear-gradient(180deg,#5a4416,#3a2c0d);color:#ffe6b0;font-size:.78rem;font-weight:800;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.5);align-items:center;animation:voiceSpeakIn .18s ease}
+.chat-unread{position:absolute;top:-2px;right:-2px;background:#e74c3c;color:#fff;font-size:.62rem;font-weight:700;border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center}
+
+/* ── In-game corner buttons (bottom-left) ───────────────────────────────── */
+.corner-btns{position:absolute;left:8px;bottom:8px;z-index:12;display:flex;flex-direction:column;gap:7px}
+.corner-btns button{
+  width:auto;padding:6px 13px;font-size:.74rem;font-weight:800;border-radius:18px;letter-spacing:.3px;
+  background:linear-gradient(180deg,rgba(48,28,82,.72),rgba(22,13,42,.8));
+  border:1px solid rgba(255,255,255,.16);color:rgba(255,255,255,.85);
+  box-shadow:0 3px 10px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.1);
+  text-shadow:0 1px 2px rgba(0,0,0,.4);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);
+  transition:transform .12s ease,background .15s,border-color .15s,box-shadow .15s,opacity .15s;
+}
+.corner-btns button:hover{transform:translateY(-1px);box-shadow:0 5px 14px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.14)}
+.corner-btns button:active{transform:scale(.93)}
+.leave-btn:hover{background:linear-gradient(180deg,rgba(231,76,60,.5),rgba(150,40,32,.55));border-color:rgba(231,76,60,.7);color:#fff}
+.scores-btn:hover{background:linear-gradient(180deg,rgba(255,158,205,.42),rgba(160,80,120,.5));border-color:rgba(255,158,205,.7);color:#fff}
+.emote-btn:hover{background:linear-gradient(180deg,rgba(57,216,255,.4),rgba(30,120,150,.5));border-color:rgba(57,216,255,.7);color:#fff}
+.help-btn:hover{background:linear-gradient(180deg,rgba(255,215,0,.38),rgba(160,130,20,.5));border-color:rgba(255,215,0,.7);color:#fff}
+.help-btn.dim{opacity:.4}
+#emoteBar{position:absolute;left:8px;bottom:118px;z-index:13;display:none;flex-wrap:wrap;gap:4px;max-width:212px;padding:8px;border-radius:14px;background:rgba(20,12,40,.92);border:1px solid rgba(255,158,205,.35);box-shadow:0 8px 28px rgba(0,0,0,.5);animation:emotePop .16s ease-out}
+#emoteBar button{width:38px;height:38px;padding:0;font-size:1.3rem;line-height:1;border-radius:10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);box-shadow:none;text-shadow:none;cursor:pointer;transition:transform .08s,background .12s}
+#emoteBar button:hover{background:rgba(57,216,255,.22);transform:scale(1.18)}
+@keyframes emotePop{from{opacity:0;transform:translateY(8px) scale(.92)}to{opacity:1;transform:none}}
+.abtn.timer{background:rgba(30,20,55,.92);border:1px solid rgba(255,158,205,.5);color:#ffd9ec;font-weight:800;text-align:center;display:inline-flex;align-items:center;gap:7px;padding:5px 14px 5px 9px}
+.abtn.timer .tt-ring{width:26px;height:26px;display:block;transform:rotate(-90deg);flex:none}
+.abtn.timer .tt-bg{fill:none;stroke:rgba(255,255,255,.15);stroke-width:3.2}
+.abtn.timer .tt-fg{fill:none;stroke:#ff9ecd;stroke-width:3.2;stroke-linecap:round;stroke-dasharray:97.39;stroke-dashoffset:0;transition:stroke-dashoffset .34s linear,stroke .34s linear}
+.abtn.timer .tt-num{min-width:20px;font-variant-numeric:tabular-nums}
+.abtn.timer.urgent{border-color:#ff6b6b;color:#ffd2d2;animation:ttPulse .8s infinite}
+.abtn.timer.urgent .tt-fg{stroke:#ff6b6b}
+@keyframes ttPulse{50%{opacity:.5}}
+#specBadge{position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:14;padding:4px 13px;border-radius:13px;background:rgba(40,30,70,.92);border:1px solid rgba(120,200,255,.55);color:#dbeeff;font-size:.75rem;font-weight:800;box-shadow:0 2px 10px rgba(0,0,0,.45);pointer-events:none}
+
+/* ── Chow picker / confirm box ──────────────────────────────────────────── */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:400}
+.chowpick{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#1a1033;border:2px solid #27ae60;border-radius:16px;padding:22px;z-index:401;display:flex;flex-direction:column;gap:12px;align-items:center;min-width:240px}
+.chowpick h3{color:#27ae60;font-size:1.05rem}
+.chowopt{display:flex;gap:3px;cursor:pointer;padding:8px;border-radius:8px;border:2px solid transparent;transition:border-color .14s}
+.chowopt:hover{border-color:#27ae60}
+.confirm-box{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#1a1033;border:2px solid rgba(231,76,60,.55);border-radius:16px;padding:24px;z-index:401;display:flex;flex-direction:column;gap:10px;align-items:center;text-align:center;width:min(340px,90vw)}
+.confirm-box h3{font-size:1.15rem}
+.confirm-box .btn-row{display:flex;gap:8px;width:100%}
+.confirm-box .btn-row button{flex:1}
+
+/* ── In-game scoreboard ─────────────────────────────────────────────────── */
+.scores-box{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#1a1033;border:2px solid #ff9ecd;border-radius:16px;z-index:401;display:flex;flex-direction:column;width:min(380px,92vw);overflow:hidden}
+.scores-box .stbl td{padding:9px 8px;font-size:.92rem}
+.scores-box .wind-pill{display:inline-block;font-size:.66rem;font-weight:800;border-radius:5px;padding:1px 6px;margin-right:6px;vertical-align:middle}
+.wp-east{background:#8B0000;color:#fff}.wp-south{background:#1a5c1a;color:#fff}.wp-west{background:#4a3200;color:#ffd54f}.wp-north{background:#1a2e5a;color:#90caf9}
+
+/* ── Rules / Fan Table ──────────────────────────────────────────────────── */
+.rules-box{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#1a1033;border:2px solid #c98fff;border-radius:16px;z-index:401;display:flex;flex-direction:column;width:min(460px,94vw);max-height:88vh;overflow:hidden}
+/* How-to-play tutorial */
+.tutorial-box{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:401;width:min(440px,92vw);max-height:90vh;overflow:hidden;background:linear-gradient(180deg,#241546,#150c2b);border:2px solid rgba(255,158,205,.42);border-radius:20px;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,.6)}
+.tut-skip{position:absolute;top:10px;right:12px;width:auto;padding:4px 11px;font-size:.76rem;background:rgba(255,255,255,.09);box-shadow:none;z-index:2}
+.tut-body{padding:30px 24px 12px;text-align:center;overflow-y:auto;min-height:280px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:11px}
+.tut-emoji{font-size:3.1rem;line-height:1;filter:drop-shadow(0 4px 8px rgba(0,0,0,.4));animation:tilefloat 3.5s ease-in-out infinite}
+.tut-title{font-size:1.4rem;background:linear-gradient(90deg,#fff,#ffd1e6,#cbb3ff);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.tut-text{font-size:.93rem;line-height:1.55;opacity:.92;max-width:362px}
+.tut-text b{color:#ffd1e6}
+.tut-tiles{display:flex;align-items:center;justify-content:center;gap:3px;flex-wrap:wrap;margin-top:8px}
+.tut-tile img{width:33px;height:40px;filter:drop-shadow(0 3px 5px rgba(0,0,0,.45))}
+.tut-gap{width:11px}
+.tut-foot{display:flex;align-items:center;gap:10px;padding:14px 18px 18px;border-top:1px solid rgba(255,255,255,.08)}
+.tut-dots{display:flex;gap:6px;flex:1;justify-content:center}
+.tut-dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.22);transition:all .2s}
+.tut-dot.on{background:#ff9ecd;width:18px;border-radius:4px}
+.tut-foot button{width:auto;padding:9px 17px;font-size:.85rem}
+.rules-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.1)}
+.rules-head h2{font-size:1.15rem}
+.rules-body{overflow-y:auto;padding:8px 16px 18px}
+.rules-cat{font-size:.74rem;letter-spacing:.6px;text-transform:uppercase;color:#c98fff;font-weight:800;margin:14px 0 6px}
+.rules-note{background:rgba(255,158,205,.1);border:1px solid rgba(255,158,205,.25);border-radius:10px;padding:10px 12px;font-size:.82rem;line-height:1.5;margin-bottom:4px}
+.rules-note b{color:#ffd700}
+.fan-row{display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid rgba(255,255,255,.06)}
+.fan-row .zh{font-weight:700;font-size:.92rem;min-width:62px}
+.fan-row .en{flex:1;font-size:.8rem;opacity:.72}
+.fan-row .fan{font-weight:800;color:#ffd700;font-size:.85rem;white-space:nowrap}
+
+/* ── Win overlay ────────────────────────────────────────────────────────── */
+#winScreen{position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:300;display:none;align-items:center;justify-content:center;overflow:hidden}
+.win-tile,.win-hand>div{animation:tilein .4s cubic-bezier(.34,1.56,.64,1) backwards}
+@keyframes tilein{from{transform:translateY(16px) scale(.55);opacity:0}}
+.confetti{position:absolute;top:-16px;width:9px;height:14px;border-radius:2px;animation:confall linear forwards;pointer-events:none;z-index:301}
+@keyframes confall{to{transform:translateY(108vh) rotate(740deg);opacity:.65}}
+/* Sweeping light rays behind the win card */
+.win-rays{position:absolute;top:50%;left:50%;width:170vmax;height:170vmax;transform:translate(-50%,-50%);pointer-events:none;opacity:0;transition:opacity .7s;
+  background:repeating-conic-gradient(from 0deg,rgba(255,215,0,.11) 0deg 7deg,transparent 7deg 18deg);
+  -webkit-mask-image:radial-gradient(closest-side,#000 12%,transparent 72%);mask-image:radial-gradient(closest-side,#000 12%,transparent 72%);
+  animation:rayspin 26s linear infinite}
+.win-rays.on{opacity:1}
+@keyframes rayspin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+/* Burst sparkles */
+.wsparkle{position:absolute;pointer-events:none;z-index:302;font-size:18px;color:#fff;text-shadow:0 0 8px #ffd700,0 0 14px #ffd700;animation:wspark 1.5s ease-out forwards}
+@keyframes wspark{0%{transform:scale(0) rotate(0);opacity:0}18%{opacity:1}100%{transform:scale(1.4) rotate(150deg);opacity:0}}
+.wincard{position:relative;z-index:1;background:#1a1033;border:2px solid #f1c40f;border-radius:20px;padding:28px;max-width:500px;width:92vw;text-align:center;display:flex;flex-direction:column;gap:13px;max-height:90vh;overflow-y:auto;box-shadow:0 0 50px rgba(241,196,15,.25),0 24px 60px rgba(0,0,0,.6)}
+.wincard h2{font-size:1.9rem;color:#f1c40f;text-shadow:0 0 18px rgba(241,196,15,.6),0 2px 4px rgba(0,0,0,.5)}
+#winIco{filter:drop-shadow(0 0 18px rgba(255,215,0,.55));animation:winpop .6s cubic-bezier(.2,1.5,.4,1) both}
+@keyframes winpop{0%{transform:scale(0) rotate(-25deg)}60%{transform:scale(1.22)}100%{transform:scale(1)}}
+.win-hand{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;padding:4px 0}
+.win-tile{display:inline-flex;align-items:center;justify-content:center;width:38px;height:46px;background:#fffef2;border-radius:5px;font-size:22px;color:#111;overflow:hidden;position:relative;border-bottom:3px solid #cfc8ab;box-shadow:0 4px 9px rgba(0,0,0,.55),0 1px 2px rgba(0,0,0,.4)}
+.win-tile img{width:100%;height:100%;display:block}
+.win-tile::after{content:'';position:absolute;inset:0;border-radius:5px;background:linear-gradient(180deg,rgba(255,255,255,.35),rgba(255,255,255,0) 30%);pointer-events:none}
+.win-tile.back{background:linear-gradient(180deg,#1a9a50 0%,#0e7a30 60%,#0a5a24 100%);border-bottom:3px solid #e9e2c8}
+.chow-tile{display:inline-flex;width:38px;height:46px;border-radius:5px;overflow:hidden;position:relative;border-bottom:3px solid #cfc8ab;box-shadow:0 4px 9px rgba(0,0,0,.55)}
+.chow-tile img{width:100%;height:100%;display:block}
+.chow-tile::after{content:'';position:absolute;inset:0;border-radius:5px;background:linear-gradient(180deg,rgba(255,255,255,.35),rgba(255,255,255,0) 30%);pointer-events:none}
+.chow-tile.target{outline:2.5px solid #ffd700;outline-offset:-2.5px}
+.stbl{width:100%;border-collapse:collapse;font-size:.88rem}
+.stbl td{padding:5px 10px;border-bottom:1px solid rgba(255,255,255,.07)}
+.stbl td:last-child{text-align:right;font-weight:700;color:#ff9ecd}
+.stbl .winner-row td{color:#f1c40f}
+.score-detail{font-size:.78rem;opacity:.65;margin-top:-6px;text-align:center}
+.btn-row{display:flex;gap:8px}
+.btn-row button{flex:1}
+
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:rgba(255,255,255,.02)}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,.18);border-radius:2px}
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+@media(max-width:480px){
+  .card{padding:20px}
+  .card h1{font-size:1.7rem}
+  /* Float the mic higher on phones so it clears the hand tiles at the bottom */
+  :root{--voicebtm:30dvh}
+  /* Icon-only corner buttons laid out as a horizontal row in the bottom strip,
+     so they sit below the hand tiles instead of overlapping them. */
+  .corner-btns{flex-direction:row;left:6px;bottom:6px;gap:5px}
+  .corner-btns button{padding:6px 9px;font-size:.95rem}
+  .corner-btns .btn-label{display:none}
+  #actionOverlay .abtn{padding:9px 16px;font-size:.86rem}
+  /* While interactive claim buttons (Pong/Kong/…) show, tuck the corner row
+     away so it can't sit under them; it returns as soon as they clear. */
+  body.actions-on .corner-btns{display:none}
+  /* Keep action-overlay content clear of the chat button (right) always, and of
+     the corner row (left) during the discard hint; use the short hint text. */
+  #actionOverlay{padding:6px 60px 6px 10px}
+  body:not(.actions-on) #actionOverlay{padding-left:150px}
+  .abtn.hint{font-size:.74rem;padding:5px 8px}
+  .abtn.hint .h-lg{display:none}
+  .abtn.hint .h-sm{display:inline}
+}
+</style>
+</head>
+<body>
+
+<!-- Decorative sakura petals behind the menus (hidden during the game) -->
+<div id="petals"></div>
+
+<!-- ── Name ───────────────────────────────────────────────────────────────── -->
+<div id="nameScreen" class="screen active">
+  <div class="card">
+    <div class="logo-emblem"><span class="logo-glyph">中</span></div>
+    <h1>HK Mahjong</h1>
+    <div class="deco-tiles">
+      <img src="assets/tiles/f1.svg" alt=""><img src="assets/tiles/d1.svg" alt=""><img src="assets/tiles/w5.svg" alt=""><img src="assets/tiles/s1.svg" alt=""><img src="assets/tiles/t5.svg" alt=""><img src="assets/tiles/d2.svg" alt=""><img src="assets/tiles/h5.svg" alt="">
+    </div>
+    <p style="text-align:center;opacity:.55;font-size:.88rem">麻雀 · Multiplayer · Bots · Hong Kong Rules</p>
+    <div class="sep"></div>
+    <input id="nameIn" placeholder="Your name" maxlength="20" autofocus autocomplete="off">
+    <div id="nameErr" class="err"></div>
+    <button onclick="submitName()">Continue →</button>
+    <button class="sec" onclick="showTutorial()" style="margin-top:-4px">❓ How to Play</button>
+    <div id="homeStats" style="text-align:center;opacity:.5;font-size:.74rem;margin-top:8px"></div>
+  </div>
+</div>
+
+<!-- ── Lobby ──────────────────────────────────────────────────────────────── -->
+<div id="lobbyScreen" class="screen">
+  <div class="card">
+    <div class="logo-emblem sm"><span class="logo-glyph">中</span></div>
+    <h1>Mahjong</h1>
+    <div style="text-align:center;opacity:.65;font-size:.88rem">Hello, <span id="myNameDisp" style="color:#ff9ecd;font-weight:700"></span>!</div>
+    <div class="deco-tiles">
+      <img src="assets/tiles/d1.svg" alt=""><img src="assets/tiles/s2.svg" alt=""><img src="assets/tiles/w8.svg" alt=""><img src="assets/tiles/t3.svg" alt=""><img src="assets/tiles/f3.svg" alt="">
+    </div>
+    <div class="local-only inf" style="display:none">🎴 Create a room to play vs bots, or share your room code so friends can join online!</div>
+    <div class="sep"></div>
+    <button onclick="createRoom()">🏠 Create New Room</button>
+    <div class="sep"></div>
+    <h3>Join by Code</h3>
+    <div style="display:flex;gap:8px">
+      <input id="codeIn" placeholder="Room code" style="text-transform:uppercase;letter-spacing:2px;flex:1">
+      <button onclick="joinCode()" style="width:auto;padding:11px 16px">Join</button>
+    </div>
+    <div class="sep online-hide"></div>
+    <div class="online-hide" style="display:flex;justify-content:space-between;align-items:center">
+      <h3>Open Rooms</h3>
+      <button class="sec" style="width:auto;padding:4px 10px;font-size:.78rem" onclick="refreshRooms()">↻ Refresh</button>
+    </div>
+    <div id="roomListEl" class="online-hide" style="display:flex;flex-direction:column;gap:5px;max-height:200px;overflow-y:auto"></div>
+    <div id="lobbyErr" class="err"></div>
+    <div class="sep"></div>
+    <div style="display:flex;gap:8px">
+      <button class="sec" onclick="showTutorial()" style="flex:1">❓ How to Play</button>
+      <button class="sec" onclick="showRules()" style="flex:1">📖 Rules</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Waiting room ───────────────────────────────────────────────────────── -->
+<div id="waitingScreen" class="screen">
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap">
+      <h2>Room <span id="roomCodeDisp" style="color:#ff9ecd;letter-spacing:4px;font-family:monospace;font-size:1.4rem"></span></h2>
+      <button id="copyCodeBtn" onclick="copyCode()" style="width:auto;padding:5px 13px;font-size:.78rem;background:rgba(255,158,205,.15);border:1px solid rgba(255,158,205,.35);color:#ff9ecd">Copy Code</button>
+    </div>
+    <div class="inf">Share this code with friends on your network!</div>
+    <div class="sep"></div>
+    <h3>Players (<span id="pcountDisp">1</span>/4)</h3>
+    <div id="waitPlayers" style="display:flex;flex-direction:column;gap:6px"></div>
+    <div class="sep"></div>
+    <div id="handInfo" style="font-size:.78rem;opacity:.55;text-align:center"></div>
+    <div id="botLevelRow">
+      <div style="font-size:.78rem;opacity:.6;text-align:center;margin-bottom:5px">🤖 Bot difficulty</div>
+      <div class="seg" id="botLevelSeg">
+        <button class="seg-btn" data-lvl="easy" onclick="setBotLevel('easy')">Easy</button>
+        <button class="seg-btn on" data-lvl="medium" onclick="setBotLevel('medium')">Medium</button>
+        <button class="seg-btn" data-lvl="hard" onclick="setBotLevel('hard')">Hard</button>
+      </div>
+    </div>
+    <div id="hintRow" style="margin-top:6px">
+      <div style="font-size:.78rem;opacity:.6;text-align:center;margin-bottom:5px">💡 Help me play <span style="opacity:.55">— hints &amp; best discard</span></div>
+      <div class="seg" id="hintSeg">
+        <button class="seg-btn on" data-h="off" onclick="setHints(false)">Off</button>
+        <button class="seg-btn" data-h="on" onclick="setHints(true)">On</button>
+      </div>
+    </div>
+    <div style="font-size:.78rem;opacity:.55;text-align:center">Empty seats fill with bots when host starts.</div>
+    <button id="startBtn" onclick="startGame()" style="margin-top:4px">▶ Start Game (fill with bots)</button>
+    <button class="sec" onclick="confirmLeave()">← Leave Room</button>
+    <div id="waitErr" class="err"></div>
+  </div>
+</div>
+
+<!-- ── Game screen ────────────────────────────────────────────────────────── -->
+<div id="gameScreen" class="screen">
+  <div id="gameArea">
+    <div id="phaserMount"></div>
+    <div class="corner-btns">
+      <button class="scores-btn" id="scoresBtn" onclick="showScores()" title="Scoreboard">📊<span class="btn-label"> Scores</span></button>
+      <button class="rules-btn" id="rulesBtn" onclick="showRules()" title="Rules &amp; fan table">📖<span class="btn-label"> Rules</span></button>
+      <button class="help-btn" id="helpBtn" onclick="requestHelp()" title="Show a hint for this turn" style="display:none">💡<span class="btn-label"> Help</span></button>
+      <button class="emote-btn" id="emoteBtn" onclick="toggleEmotes()" title="Send a reaction">😄<span class="btn-label"> React</span></button>
+      <button class="leave-btn" id="leaveBtn" onclick="confirmLeave()" title="Leave game">🚪<span class="btn-label"> Leave</span></button>
+    </div>
+    <div id="emoteBar"></div>
+    <div id="specBadge" style="display:none">👁 Spectating</div>
+    <div id="actionOverlay"></div>
+  </div>
+  <div class="chat-panel" id="chatPanel">
+    <div class="chat-header">
+      <span>💬 Chat</span>
+      <button class="chat-toggle-btn" onclick="toggleChat()">✕</button>
+    </div>
+    <div class="chat-msgs" id="chatMsgs"></div>
+    <div class="chat-input-row">
+      <input id="chatIn" placeholder="Say something…" maxlength="200" autocomplete="off">
+      <button onclick="sendChat()">➤</button>
+    </div>
+  </div>
+</div>
+
+<!-- Floating chat (mobile) -->
+<button class="chat-float-btn" id="chatFloatBtn" onclick="openMobileChat()">
+  💬<span class="chat-unread" id="chatUnread" style="display:none">0</span>
+</button>
+
+<!-- Push-to-talk voice (online) -->
+<button id="voiceBtn" class="voice-btn off" style="display:none">🎤<span class="vlabel">Tap for voice</span></button>
+<div id="voiceSpeaking" aria-live="polite" style="display:none"></div>
+<button id="voiceUnlock" style="display:none">🔇 Tap to enable audio</button>
+<div id="voiceAudio" aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden"></div>
+
+<!-- ── In-game scoreboard ─────────────────────────────────────────────────── -->
+<div id="scoresOvl" style="display:none">
+  <div class="overlay" onclick="hideScores()"></div>
+  <div class="scores-box">
+    <div class="rules-head">
+      <h2>📊 Scoreboard</h2>
+      <button class="chat-toggle-btn" onclick="hideScores()">✕</button>
+    </div>
+    <div id="scoresSub" style="font-size:.78rem;opacity:.6;padding:0 18px 4px"></div>
+    <table class="stbl" id="scoresTbl" style="margin:0 16px 8px;width:calc(100% - 32px)"></table>
+    <div id="lbSection" style="display:none">
+      <div style="font-size:.74rem;opacity:.55;text-transform:uppercase;letter-spacing:.05em;padding:10px 18px 2px">🏆 Room leaderboard</div>
+      <div id="lbSub" style="font-size:.72rem;opacity:.5;padding:0 18px 4px"></div>
+      <table class="stbl" id="lbTbl" style="margin:0 16px 18px;width:calc(100% - 32px)"></table>
+    </div>
+  </div>
+</div>
+
+<!-- ── Rules / Fan Table ──────────────────────────────────────────────────── -->
+<div id="rulesOvl" style="display:none">
+  <div class="overlay" onclick="hideRules()"></div>
+  <div class="rules-box">
+    <div class="rules-head">
+      <h2>📖 Rules &amp; Fan Table</h2>
+      <button class="chat-toggle-btn" onclick="hideRules()">✕</button>
+    </div>
+    <div class="rules-body" id="rulesBody"></div>
+  </div>
+</div>
+
+<!-- ── How-to-play tutorial ───────────────────────────────────────────────── -->
+<div id="tutorialOvl" style="display:none">
+  <div class="overlay" onclick="closeTutorial()"></div>
+  <div class="tutorial-box">
+    <button class="tut-skip sec" onclick="closeTutorial()">Skip</button>
+    <div class="tut-body" id="tutBody"></div>
+    <div class="tut-foot">
+      <button class="sec" id="tutBack" onclick="tutPrev()">← Back</button>
+      <div class="tut-dots" id="tutDots"></div>
+      <button id="tutNext" onclick="tutNext()">Next →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Leave confirmation ─────────────────────────────────────────────────── -->
+<div id="leaveOvl" style="display:none">
+  <div class="overlay" onclick="cancelLeave()"></div>
+  <div class="confirm-box">
+    <div style="font-size:2.2rem">🚪</div>
+    <h3>Leave this game?</h3>
+    <p style="opacity:.6;font-size:.85rem">You'll return to the lobby and your seat will be filled by a bot.</p>
+    <div class="btn-row" style="margin-top:6px">
+      <button class="danger" onclick="leaveRoom()">Yes, leave</button>
+      <button class="sec" onclick="cancelLeave()">Keep playing</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Chow picker ────────────────────────────────────────────────────────── -->
+<div id="chowOvl" style="display:none">
+  <div class="overlay" onclick="cancelChow()"></div>
+  <div class="chowpick">
+    <h3>Choose your Chow</h3>
+    <p style="opacity:.6;font-size:.82rem">Select which pair to use from hand:</p>
+    <div id="chowOpts" style="display:flex;flex-direction:column;gap:6px"></div>
+    <button class="sec" onclick="cancelChow()" style="width:auto;padding:7px 16px">Cancel</button>
+  </div>
+</div>
+
+<!-- ── Win screen ─────────────────────────────────────────────────────────── -->
+<div id="winScreen">
+  <div class="win-rays" id="winRays"></div>
+  <div class="wincard">
+    <div id="winIco" style="font-size:3.5rem"></div>
+    <h2 id="winMsg"></h2>
+    <div id="winSub" style="opacity:.7;font-size:.88rem"></div>
+    <div id="winHand" class="win-hand"></div>
+    <div id="scoreDetail" class="score-detail"></div>
+    <div class="sep"></div>
+    <table class="stbl" id="stbl"></table>
+    <div id="winMatchInfo" style="font-size:.76rem;opacity:.5;text-align:center;margin-top:2px"></div>
+    <div id="nextHint" class="inf" style="display:none">⏳ Waiting for the host to start the next round…</div>
+    <div class="btn-row" style="margin-top:4px">
+      <button id="nextRoundBtn" onclick="requestNextRound()">▶ Next Round</button>
+      <button class="sec" onclick="confirmLeave()">🚪 Leave</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Final match standings ──────────────────────────────────────────────── -->
+<div id="matchScreen" style="position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:300;display:none;align-items:center;justify-content:center;overflow:hidden">
+  <div class="wincard" style="border-color:#ffd700">
+    <div id="matchBody" style="display:flex;flex-direction:column;gap:10px;align-items:center"></div>
+    <div id="matchNewHint" class="inf" style="display:none">⏳ Waiting for the host to start a new match…</div>
+    <div class="btn-row" style="margin-top:6px">
+      <button id="matchNewBtn" onclick="requestNewMatch()">🔄 New Match</button>
+      <button class="sec" onclick="confirmLeave()">🚪 Leave</button>
+    </div>
+  </div>
+</div>
+
+<script src="client.js"></script>
+</body>
+</html>
