@@ -6,6 +6,7 @@ let lastDrawnTileId = null, prevHandIds = new Set();
 let unreadCount = 0, chatOpen = true, pendingWindBanner = null;
 let phaserGame = null;
 let turnDeadline = null;   // local timestamp when the server will auto-play an idle turn
+let roomBoard = [];        // running per-room leaderboard (across all hands/matches)
 let isSpectator = false;   // watching a room without a seat
 // Persisted UI settings (sound on by default, hints off by default)
 function loadSetting(key, dflt){ try { const v=localStorage.getItem(key); return v==null?dflt:v==='1'; } catch { return dflt; } }
@@ -745,11 +746,11 @@ function onMsg(m) {
       break;
 
     case 'roomCreated':
-      roomId=m.roomId; isHost=true; setRoom(m.roomId,m.players); saveSession(); showSc('waitingScreen');
+      roomId=m.roomId; isHost=true; roomBoard=[]; setRoom(m.roomId,m.players); saveSession(); showSc('waitingScreen');
       break;
 
     case 'roomJoined':
-      roomId=m.roomId; setRoom(m.roomId,m.players); saveSession(); showSc('waitingScreen');
+      roomId=m.roomId; roomBoard=[]; setRoom(m.roomId,m.players); saveSession(); showSc('waitingScreen');
       break;
 
     case 'playerLeft':
@@ -782,6 +783,7 @@ function onMsg(m) {
       // A one-time Help tip lasts only for the current discard turn
       if (!(m.myActions||[]).includes('discard')) helpOnce = false;
       prevG = prev; G = m;
+      if (m.leaderboard) roomBoard = m.leaderboard;
       turnDeadline = (m.turnLeftMs != null) ? Date.now() + m.turnLeftMs : null;
       isSpectator = !!m.spectator;
       updateSpecBadge();
@@ -823,6 +825,7 @@ function onMsg(m) {
       break;
 
     case 'matchOver': showMatchOver(m); break;
+    case 'leaderboard': roomBoard = m.board||[]; if(document.getElementById('scoresOvl').style.display==='block') renderLeaderboard(); break;
     case 'chat': addChatMsg(m); break;
     case 'error': showErr(m.msg||'Error'); break;
   }
@@ -1085,9 +1088,33 @@ function showScores() {
     return `<tr><td${cur}><span class="wind-pill wp-${wind}">${WL[wind]}</span>${medal}${esc(p.name)}${p.id===myId?' (You)':''}${p.isBot?' 🤖':''}</td>`+
       `<td style="text-align:right;font-weight:800;color:${col}">${pts>0?'+':''}${pts}</td></tr>`;
   }).join('');
+  renderLeaderboard();
   document.getElementById('scoresOvl').style.display='block';
 }
 function hideScores() { document.getElementById('scoresOvl').style.display='none'; }
+
+// Running per-room leaderboard (across every hand & match this room has played).
+// Rendered into the scoreboard overlay and reused on the match-over screen.
+function leaderboardRows(board){
+  const medals=['🥇','🥈','🥉',''];
+  return board.map((e,i)=>{
+    const col = e.pts>0?'#5dfc8b':e.pts<0?'#e74c3c':'#ccc';
+    const rec = `${e.wins||0}W · ${e.hands||0}H${e.bestFan?` · best ${e.bestFan} fan`:''}`;
+    return `<tr><td>${medals[i]||''} ${esc(e.name)}${e.name===myName?' (You)':''}`+
+      `<div style="font-size:.68rem;opacity:.5">${rec}</div></td>`+
+      `<td style="text-align:right;font-weight:800;color:${col}">${e.pts>0?'+':''}${e.pts}</td></tr>`;
+  }).join('');
+}
+function renderLeaderboard(){
+  const sec=document.getElementById('lbSection');
+  if(!sec) return;
+  // Need at least two tracked humans before a leaderboard is meaningful.
+  if(!roomBoard || roomBoard.length<2){ sec.style.display='none'; return; }
+  const totalHands = roomBoard.reduce((m,e)=>Math.max(m,e.hands||0),0);
+  document.getElementById('lbSub').textContent = `${totalHands} hand${totalHands===1?'':'s'} this room · across all matches`;
+  document.getElementById('lbTbl').innerHTML = leaderboardRows(roomBoard);
+  sec.style.display='block';
+}
 
 function confirmLeave() { document.getElementById('leaveOvl').style.display='block'; }
 function cancelLeave() { document.getElementById('leaveOvl').style.display='none'; }
@@ -1313,6 +1340,7 @@ function requestNextRound(){ tx({type:'nextRound'}); document.getElementById('wi
 // ─── Final match standings ────────────────────────────────────────────────────
 function showMatchOver(m){
   document.getElementById('winScreen').style.display='none';
+  if (m.board) roomBoard = m.board;
   const box=document.getElementById('matchBody');
   const medals=['🥇','🥈','🥉',''];
   const champ=m.standings[0];
@@ -1326,6 +1354,9 @@ function showMatchOver(m){
         `<td style="text-align:right;font-size:.8rem;color:#ffd700">${wcnt?'🏆 '+wcnt:'—'}</td>`+
         `<td style="text-align:right;font-weight:800;color:${col}">${p.score>0?'+':''}${p.score}</td></tr>`;
     }).join('') + `</table>`+
+    ((roomBoard && roomBoard.length>=2) ?
+      `<div style="font-size:.74rem;opacity:.55;text-transform:uppercase;letter-spacing:.05em;margin:14px 0 4px">🏆 Room leaderboard</div>`+
+      `<table class="stbl">${leaderboardRows(roomBoard)}</table>` : '')+
     `<div style="opacity:.6;font-size:.76rem;margin-top:8px">${statsLine()}</div>`;
   document.getElementById('matchNewBtn').style.display = isHost ? 'block' : 'none';
   document.getElementById('matchNewHint').style.display = isHost ? 'none' : 'block';

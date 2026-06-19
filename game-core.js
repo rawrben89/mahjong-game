@@ -384,7 +384,59 @@ function tenpaiWaits(conc) {
   return waits;
 }
 
-function botChooseDiscard(hand, level = 'medium') {
+// ─── Defensive play (medium/hard bots) ───────────────────────────────────────
+// How many copies of a tile type are already visible to the table (discard pool
+// + everyone's exposed melds). A tile with most copies showing is "dead" — it
+// can complete few waits, so it's safer to throw.
+function visibleCount(g, tile) {
+  let n = g.allDiscards.filter(d => same(d, tile)).length;
+  for (const opid of g.players) for (const m of (g.melds[opid] || [])) n += m.tiles.filter(t => same(t, tile)).length;
+  return n;
+}
+
+// How threatening one opponent looks right now. Each exposed meld is a locked
+// set (closer to a win); a value pung (dragon / seat / round wind) signals an
+// expensive hand worth folding against.
+function threatLevel(g, opid) {
+  const melds = g.melds[opid] || [];
+  let t = melds.length;
+  for (const m of melds) {
+    const t0 = m.tiles[0];
+    if (t0.suit === 'dragon') t += 1;
+    if (t0.suit === 'wind' && (t0.value === g.seatWinds[opid] || t0.value === g.prevailingWind)) t += 1;
+  }
+  return t;
+}
+
+// Risk of discarding `tile`, ~0 (safe) … ~1 (risky), scaled by how hard the
+// table is pushing. Genbutsu (a tile type already in the pool) is treated as
+// safe; dead and terminal/honor tiles are safer than live middle tiles, which
+// complete the most chows.
+function discardDanger(g, meId, tile) {
+  let maxThreat = 0;
+  for (const op of g.players) if (op !== meId) { const th = threatLevel(g, op); if (th > maxThreat) maxThreat = th; }
+  if (maxThreat < 2) return 0;                                  // nobody's pushing — play freely
+  if (g.allDiscards.some(d => same(d, tile))) return 0;         // genbutsu: already thrown and passed
+  const vis = visibleCount(g, tile);
+  let base;
+  if (!SUITS.includes(tile.suit)) {
+    base = vis >= 2 ? 0.1 : 0.5;                                // honor: dead once 2+ copies show
+  } else {
+    const v = tile.value;
+    base = (v === 1 || v === 9) ? 0.35 : (v === 2 || v === 8) ? 0.55 : 0.8;
+    if (vis >= 2) base *= 0.5;                                  // fewer live copies → fewer waits
+  }
+  return base * Math.min(1, maxThreat / 4);
+}
+
+function botChooseDiscard(hand, level = 'medium', g = null, pid = null) {
+  // Defensive context: medium/hard bots avoid feeding a pushing opponent. The
+  // weight is how much tile-usefulness a fully-dangerous discard is worth giving
+  // up to stay safe. Easy bots (and unit calls without game state) never defend.
+  const defending = level !== 'easy' && g && pid;
+  const danger = t => (defending ? discardDanger(g, pid, t) : 0);
+  const defW = level === 'hard' ? 22 : 12;
+
   // Tenpai-seeking (medium/hard): prefer a discard that leaves the hand ready
   // to win, choosing the discard with the most live waiting tiles. Easy bots
   // stay loose and skip this. Always falls through to the heuristic below.
@@ -398,16 +450,16 @@ function botChooseDiscard(hand, level = 'medium') {
       const waits = tenpaiWaits(rem);
       if (!waits.length) continue;
       const live = waits.reduce((s, w) => s + (4 - hand.filter(x => same(x, w)).length), 0);
-      // Maximise live waits; tie-break by discarding the least useful tile
-      const keepScore = botScoreTile(d, hand);
-      if (!best || live > best.live || (live === best.live && keepScore < best.keepScore)) {
-        best = { tile: d, live, keepScore };
+      // Maximise live waits; tie-break by throwing the safest, least useful tile
+      const cost = botScoreTile(d, hand) + danger(d) * defW;
+      if (!best || live > best.live || (live === best.live && cost < best.cost)) {
+        best = { tile: d, live, cost };
       }
     }
     if (best && (level === 'hard' || Math.random() < 0.85)) return best.tile;
   }
 
-  const scored = hand.map(t => ({ t, s: botScoreTile(t, hand) }));
+  const scored = hand.map(t => ({ t, s: botScoreTile(t, hand) + danger(t) * defW }));
   if (level === 'hard') {
     // Commit to a flush when one suit clearly dominates: dump off-suit tiles
     const dom = dominantSuit(hand);
@@ -449,6 +501,36 @@ function send(ws, msg) {
 
 function broadcastRoom(room, msg) {
   room.players.forEach(p => { if (p.ws) send(p.ws, msg); });
+}
+
+// ─── Per-room leaderboard ─────────────────────────────────────────────────────
+// A running tally that accumulates across every hand and match for the room's
+// lifetime, keyed by display name (not playerId, which changes when someone
+// rejoins) so a returning player keeps their line. Bots and spectators excluded.
+function lbEntry(room, name) {
+  room.leaderboard = room.leaderboard || {};
+  return room.leaderboard[name] || (room.leaderboard[name] = { name, pts: 0, wins: 0, hands: 0, bestFan: 0 });
+}
+function leaderboardArray(room) {
+  return Object.values(room.leaderboard || {}).sort((a, b) => b.pts - a.pts || b.wins - a.wins);
+}
+// Tally one finished hand. winnerPid is the winning seat, or null for a draw;
+// fan is the winning hand's fan (0 on a draw). Net points come from this hand's
+// per-seat deltas (g.handScores). Safe to call exactly once per finished hand.
+function recordHandResult(room, winnerPid, fan) {
+  const g = room.game;
+  if (!g) return;
+  for (const p of room.players) {
+    if (p.spectator || (g.isBot && g.isBot[p.id])) continue;
+    const e = lbEntry(room, p.name);
+    e.hands += 1;
+    e.pts += (g.handScores && g.handScores[p.id]) || 0;
+    if (winnerPid && p.id === winnerPid) {
+      e.wins += 1;
+      if (fan > e.bestFan) e.bestFan = fan;
+    }
+  }
+  broadcastRoom(room, { type: 'leaderboard', board: leaderboardArray(room) });
 }
 
 // Live-voice presence: tell everyone which human players currently have voice
@@ -558,6 +640,7 @@ function gameStateFor(game, room, pid) {
     round: game.round,
     roundWindIdx: game.roundWindIdx,
     handNo: game.handNo,
+    leaderboard: leaderboardArray(room),
   };
 }
 
@@ -628,6 +711,7 @@ function advanceTurn(room) {
   if (g.wall.length === 0) {
     g.winner = 'draw';
     g.phase = 'finished';
+    recordHandResult(room, null, 0);
     sendState(room);
     return;
   }
@@ -752,6 +836,7 @@ function applyWin(room, pid, selfDraw) {
   });
   g.winScore = { fan, breakdown, total: winnerTotal };
 
+  recordHandResult(room, pid, fan);
   sendState(room);
 }
 
@@ -783,7 +868,7 @@ function applyMeld(room, pid, type) {
     g._kongPid = null; g._kongChain = 0; g._afterKongDraw = null;
     g.phase = 'discard';
     sendState(room);
-    if (g.isBot[pid]) setTimeout(() => { const d2 = botChooseDiscard(g.hands[pid], g.botLevel); doDiscard(room, pid, d2.id); }, 700);
+    if (g.isBot[pid]) setTimeout(() => { const d2 = botChooseDiscard(g.hands[pid], g.botLevel, g, pid); doDiscard(room, pid, d2.id); }, 700);
   }
 }
 
@@ -807,14 +892,14 @@ function applyChow(room, pid, chowVals) {
   g.awaitingClaims = new Set();
   sendState(room);
   // A bot that just chowed must still discard (mirrors applyMeld for pong)
-  if (g.isBot[pid]) setTimeout(() => { const d2 = botChooseDiscard(g.hands[pid], g.botLevel); doDiscard(room, pid, d2.id); }, 700);
+  if (g.isBot[pid]) setTimeout(() => { const d2 = botChooseDiscard(g.hands[pid], g.botLevel, g, pid); doDiscard(room, pid, d2.id); }, 700);
 }
 
 function doDraw(room, pid) {
   const g = room.game;
   if (g.currentPlayer !== pid || g.phase !== 'draw') return;
   const tile = popFromWall(g, pid);
-  if (!tile) { g.winner = 'draw'; g.phase = 'finished'; sendState(room); return; }
+  if (!tile) { g.winner = 'draw'; g.phase = 'finished'; recordHandResult(room, null, 0); sendState(room); return; }
   g._afterKongDraw = (g._supp === pid) ? pid : null;
   g._supp = null;
   g.hands[pid].push(tile);
@@ -941,7 +1026,7 @@ function botDraw(room) {
   const pid = g.currentPlayer;
   if (!g.isBot[pid]) return;
   const tile = popFromWall(g, pid);
-  if (!tile) { g.winner = 'draw'; g.phase = 'finished'; sendState(room); return; }
+  if (!tile) { g.winner = 'draw'; g.phase = 'finished'; recordHandResult(room, null, 0); sendState(room); return; }
   g._afterKongDraw = (g._supp === pid) ? pid : null;
   g._supp = null;
   g.hands[pid].push(tile);
@@ -960,7 +1045,7 @@ function botDraw(room) {
     return;
   }
   sendState(room);
-  setTimeout(() => { const d = botChooseDiscard(g.hands[pid], g.botLevel); doDiscard(room, pid, d.id); }, 700);
+  setTimeout(() => { const d = botChooseDiscard(g.hands[pid], g.botLevel, g, pid); doDiscard(room, pid, d.id); }, 700);
 }
 
 // ─── Room / game management ──────────────────────────────────────────────────
@@ -1018,7 +1103,7 @@ function startGame(room, withBots) {
   sendState(room);
 
   if (room.game.isBot[room.game.currentPlayer]) {
-    setTimeout(() => { const d = botChooseDiscard(room.game.hands[room.game.currentPlayer], room.game.botLevel); doDiscard(room, room.game.currentPlayer, d.id); }, 1000);
+    setTimeout(() => { const cp = room.game.currentPlayer; const d = botChooseDiscard(room.game.hands[cp], room.game.botLevel, room.game, cp); doDiscard(room, cp, d.id); }, 1000);
   }
 }
 
@@ -1236,7 +1321,7 @@ function handleMsg(ws, player, msg) {
           id: p.id, name: p.name, isBot: !!(room2.game.isBot && room2.game.isBot[p.id]),
           score: (room2.matchScores && room2.matchScores[p.id]) || 0,
         })).sort((a, b) => b.score - a.score);
-        broadcastRoom(room2, { type: 'matchOver', standings, hands: room2.handNo || 0 });
+        broadcastRoom(room2, { type: 'matchOver', standings, hands: room2.handNo || 0, board: leaderboardArray(room2) });
         return;
       }
       // Keep the SAME players (incl. bots with stable IDs) so the dealer truly
@@ -1269,7 +1354,7 @@ function handleMsg(ws, player, msg) {
 }
 
 // Exported for tests
-export { computeFan, MIN_FAN };
+export { computeFan, MIN_FAN, botChooseDiscard, discardDanger, recordHandResult, leaderboardArray };
 
 // ─── Transport entry points (shared by Node server and Cloudflare Worker) ────
 export function attachPlayer(ws) {
