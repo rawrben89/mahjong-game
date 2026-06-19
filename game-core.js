@@ -522,11 +522,14 @@ function gameStateFor(game, room, pid) {
     scoreBreakdown = game.winScore;
   }
 
+  const inGame = game.players.includes(pid);
   return {
     type: 'gameState',
     myId: pid,
-    myHand: sortTiles(game.hands[pid]),
-    myBonus: game.bonus[pid],
+    spectator: !inGame,
+    turnLeftMs: game._deadline ? Math.max(0, game._deadline - Date.now()) : null,
+    myHand: inGame ? sortTiles(game.hands[pid]) : [],
+    myBonus: inGame ? game.bonus[pid] : [],
     bonus: game.bonus,
     melds: game.melds,
     discards: game.discards,
@@ -560,9 +563,54 @@ function gameStateFor(game, room, pid) {
 
 function sendState(room) {
   if (!room.game) return;
+  armTurnTimer(room);
   room.players.forEach(p => {
     if (p.ws) send(p.ws, gameStateFor(room.game, room, p.id));
   });
+}
+
+// ─── Idle / disconnect guard ─────────────────────────────────────────────────
+// A human who goes AFK (or drops mid-turn) would otherwise freeze the whole
+// table, since claim/turn phases wait on their input. Auto-resolve after a
+// timeout: pass owed claims, and auto-draw + discard on an idle human's turn.
+const TURN_MS = 30000;   // a human's own draw/discard turn
+const CLAIM_MS = 15000;  // deciding whether to claim someone's discard
+function clearAfk(room) { if (room._afk) { clearTimeout(room._afk); room._afk = null; } }
+function armTurnTimer(room) {
+  const g = room.game;
+  clearAfk(room);
+  if (g) g._deadline = null;
+  if (!g || g.winner || g.phase === 'finished') return;
+  if (g.phase === 'claim') {
+    // robKong self-resolves elsewhere; here we only cover normal discard claims
+    const humans = [...g.awaitingClaims].filter(pid => !g.isBot[pid]);
+    if (!humans.length) return;
+    g._deadline = Date.now() + CLAIM_MS;
+    room._afk = setTimeout(() => afkResolveClaims(room), CLAIM_MS + 250);
+  } else if ((g.phase === 'draw' || g.phase === 'discard') && !g.isBot[g.currentPlayer]) {
+    g._deadline = Date.now() + TURN_MS;
+    room._afk = setTimeout(() => afkPlayTurn(room), TURN_MS + 250);
+  }
+}
+function afkResolveClaims(room) {
+  const g = room.game;
+  if (!g || g.phase !== 'claim') return;
+  g.awaitingClaims.forEach(p => { if (g.pendingClaims[p] == null) g.pendingClaims[p] = 'pass'; });
+  g.awaitingClaims = new Set();
+  resolveClaims(room);
+}
+function afkPlayTurn(room) {
+  const g = room.game;
+  if (!g) return;
+  const pid = g.currentPlayer;
+  if (g.isBot[pid]) return;
+  if (g.phase === 'draw') doDraw(room, pid);
+  const g2 = room.game; // doDraw may have ended the game (wall exhausted)
+  if (g2 && g2.phase === 'discard' && g2.currentPlayer === pid && !g2.isBot[pid]) {
+    const hand = g2.hands[pid];
+    const t = hand && hand[hand.length - 1]; // discard the just-drawn tile
+    if (t) doDiscard(room, pid, t.id);
+  }
 }
 
 // ─── Turn management ─────────────────────────────────────────────────────────
@@ -915,7 +963,7 @@ function botDraw(room) {
 // ─── Room / game management ──────────────────────────────────────────────────
 function startGame(room, withBots) {
   room.state = 'playing';
-  const humanIds = room.players.map(p => p.id);
+  const humanIds = room.players.filter(p => !p.spectator).map(p => p.id);
   const allIds = [...humanIds];
 
   if (withBots) {
@@ -973,7 +1021,7 @@ function startGame(room, withBots) {
 
 const MAX_ROOMS = 500;           // cap total live rooms (abuse / cost guard)
 const MSG_WINDOW_MS = 1000;      // sliding window for the per-connection flood guard
-const MSG_MAX_PER_WINDOW = 60;   // generous: legit play + voice ICE bursts stay well under
+const MSG_MAX_PER_WINDOW = 120;  // generous: gameplay + a 3-peer WebRTC ICE burst stay under
 
 function handleMsg(ws, player, msg) {
   if (!player || !msg || typeof msg !== 'object') return;
@@ -1045,13 +1093,22 @@ function handleMsg(ws, player, msg) {
     if (player.roomId) return;
     const room = rooms.get(msg.roomId);
     if (!room) { send(ws, { type: 'error', msg: 'Room not found' }); return; }
-    if (room.state !== 'waiting') { send(ws, { type: 'error', msg: 'Game already started' }); return; }
-    if (room.players.length >= 4) { send(ws, { type: 'error', msg: 'Room is full' }); return; }
-    room.players.push(player);
+    if (room.state === 'waiting') {
+      if (room.players.length >= 4) { send(ws, { type: 'error', msg: 'Room is full' }); return; }
+      room.players.push(player);
+      player.roomId = room.id;
+      const plist = room.players.map(p => ({ id: p.id, name: p.name }));
+      room.players.forEach(p => { if (p.ws) send(p.ws, { type: 'roomJoined', roomId: room.id, players: plist }); });
+      if (room.players.length === 4) startGame(room, false);
+      return;
+    }
+    // Game already in progress → join as a read-only spectator.
     player.roomId = room.id;
-    const plist = room.players.map(p => ({ id: p.id, name: p.name }));
-    room.players.forEach(p => { if (p.ws) send(p.ws, { type: 'roomJoined', roomId: room.id, players: plist }); });
-    if (room.players.length === 4) startGame(room, false);
+    player.spectator = true;
+    room.players.push(player);
+    send(ws, { type: 'roomJoined', roomId: room.id, spectator: true,
+      players: room.players.filter(p => !p.spectator && !p.id.startsWith('bot-')).map(p => ({ id: p.id, name: p.name })) });
+    if (room.game) { send(ws, { type: 'gameStarted' }); send(ws, gameStateFor(room.game, room, player.id)); }
     return;
   }
 
@@ -1168,7 +1225,7 @@ function handleMsg(ws, player, msg) {
       // A full match is the four winds × four dealers (seatRotation 0..15).
       // When that completes, show final standings instead of dealing again.
       if ((room2.seatRotation || 0) >= 16) {
-        const standings = room2.players.map(p => ({
+        const standings = room2.players.filter(p => !p.spectator).map(p => ({
           id: p.id, name: p.name, isBot: !!(room2.game.isBot && room2.game.isBot[p.id]),
           score: (room2.matchScores && room2.matchScores[p.id]) || 0,
         })).sort((a, b) => b.score - a.score);

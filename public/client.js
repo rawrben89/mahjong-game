@@ -5,9 +5,25 @@ let G = null, prevG = null, selTile = null;
 let lastDrawnTileId = null, prevHandIds = new Set();
 let unreadCount = 0, chatOpen = true, pendingWindBanner = null;
 let phaserGame = null;
+let turnDeadline = null;   // local timestamp when the server will auto-play an idle turn
+let isSpectator = false;   // watching a room without a seat
 // Persisted UI settings (sound on by default, hints off by default)
 function loadSetting(key, dflt){ try { const v=localStorage.getItem(key); return v==null?dflt:v==='1'; } catch { return dflt; } }
 function saveSetting(key, val){ try { localStorage.setItem(key, val?'1':'0'); } catch {} }
+// Lifetime match stats (persisted locally)
+function loadStats(){ try { return JSON.parse(localStorage.getItem('mj_stats')||'{}'); } catch { return {}; } }
+function saveStats(s){ try { localStorage.setItem('mj_stats', JSON.stringify(s)); } catch {} }
+function recordHand(won, draw, fan){
+  const s=loadStats();
+  s.hands=(s.hands||0)+1;
+  if (draw) s.draws=(s.draws||0)+1;
+  else if (won){ s.wins=(s.wins||0)+1; if ((fan||0)>(s.bestFan||0)) s.bestFan=fan; }
+  saveStats(s);
+}
+function statsLine(){
+  const s=loadStats(), h=s.hands||0, w=s.wins||0;
+  return `🀄 Hands ${h} · Wins ${w} (${h?Math.round(w/h*100):0}%) · Best ${s.bestFan||0} fan`;
+}
 let soundEnabled = loadSetting('mj_sound', true);
 let hintsEnabled = loadSetting('mj_hints', false);
 // Wins this match, tracked client-side (server only sends scores) — keyed by player id
@@ -218,12 +234,14 @@ function detectEvents(prev, curr) {
   if (!prev.winner && curr.winner) {
     if (curr.winner === 'draw') {
       scene.showToast('Draw — Wall exhausted!', '#aaaaaa');
+      if (!isSpectator) recordHand(false, true, 0);
     } else {
       const w = curr.players.find(p => p.id === curr.winner);
       matchWins[curr.winner] = (matchWins[curr.winner]||0) + 1;
       const big = curr.winType==='selfDraw' ? 'SELF-DRAW WIN!' : 'WIN!';
       if (curr.winner === myId) { scene.showCallBanner(big, 'You win!', '#ffd700'); playSound('win'); }
       else { scene.showCallBanner(big, `${w?.name||'?'} wins`, '#ff5577'); playSound('lose'); }
+      if (!isSpectator) recordHand(curr.winner === myId, false, curr.winScore?.total || 0);
     }
   }
 }
@@ -764,6 +782,9 @@ function onMsg(m) {
       // A one-time Help tip lasts only for the current discard turn
       if (!(m.myActions||[]).includes('discard')) helpOnce = false;
       prevG = prev; G = m;
+      turnDeadline = (m.turnLeftMs != null) ? Date.now() + m.turnLeftMs : null;
+      isSpectator = !!m.spectator;
+      updateSpecBadge();
       detectEvents(prev, m);
       if (!document.getElementById('gameScreen').classList.contains('active')) {
         showSc('gameScreen'); initPhaser();
@@ -1122,7 +1143,26 @@ function renderActions() {
   if (acts.includes('hiddenKong')) b.push(`<button class="abtn kong" onclick="doHiddenKong()">◈ HIDDEN KONG</button>`);
   if (acts.includes('pass'))       b.push(`<button class="abtn pass" onclick="doClaim('pass')">✕ PASS</button>`);
   if (acts.includes('discard')&&!acts.includes('win')) b.push(`<span class="abtn hint"><span class="h-lg">Tap a tile to discard</span><span class="h-sm">Tap a tile ↓</span></span>`);
+  // Countdown while you're on the clock (the server auto-plays an idle turn)
+  if (turnDeadline != null) b.push(`<span class="abtn timer" id="ttChip">⏱ —</span>`);
   bar.innerHTML=b.join('');
+  tickTurnTimer();
+}
+// Live countdown to the server's idle auto-play. Updates the chip rendered above.
+function tickTurnTimer(){
+  const chip=document.getElementById('ttChip');
+  if (!chip) return;
+  if (turnDeadline == null){ chip.remove(); return; }
+  const left=Math.max(0, Math.ceil((turnDeadline-Date.now())/1000));
+  chip.textContent='⏱ '+left+'s';
+  chip.classList.toggle('urgent', left<=5);
+}
+setInterval(tickTurnTimer, 333);
+// Show/hide the "watching" badge for spectators
+function updateSpecBadge(){
+  const el=document.getElementById('specBadge'); if(!el) return;
+  const show = isSpectator && document.getElementById('gameScreen').classList.contains('active');
+  el.style.display = show ? 'block' : 'none';
 }
 
 function tileClick(tid) {
@@ -1285,7 +1325,8 @@ function showMatchOver(m){
       return `<tr class="${i===0?'winner-row':''}"><td>${medals[i]} ${esc(p.name)}${p.id===myId?' (You)':''}${p.isBot?' 🤖':''}</td>`+
         `<td style="text-align:right;font-size:.8rem;color:#ffd700">${wcnt?'🏆 '+wcnt:'—'}</td>`+
         `<td style="text-align:right;font-weight:800;color:${col}">${p.score>0?'+':''}${p.score}</td></tr>`;
-    }).join('') + `</table>`;
+    }).join('') + `</table>`+
+    `<div style="opacity:.6;font-size:.76rem;margin-top:8px">${statsLine()}</div>`;
   document.getElementById('matchNewBtn').style.display = isHost ? 'block' : 'none';
   document.getElementById('matchNewHint').style.display = isHost ? 'none' : 'block';
   document.getElementById('matchScreen').style.display='flex';
@@ -2227,5 +2268,6 @@ syncHintSeg(); // reflect the persisted "Help me play" setting in the waiting-ro
 voiceInitButton(); // wire the push-to-talk button (P2P voice)
 // First-time players get the how-to-play walkthrough automatically (once)
 try { if(!localStorage.getItem('mj_seen_tutorial')) setTimeout(showTutorial, 500); } catch {}
+try { const hs=document.getElementById('homeStats'); if(hs && (loadStats().hands||0)>0) hs.textContent=statsLine(); } catch {}
 connect();
 setInterval(()=>{ if(document.getElementById('lobbyScreen').classList.contains('active')) refreshRooms(); },12000);

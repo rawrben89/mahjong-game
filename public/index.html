@@ -187,6 +187,10 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
 #emoteBar button{width:38px;height:38px;padding:0;font-size:1.3rem;line-height:1;border-radius:10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);box-shadow:none;text-shadow:none;cursor:pointer;transition:transform .08s,background .12s}
 #emoteBar button:hover{background:rgba(57,216,255,.22);transform:scale(1.18)}
 @keyframes emotePop{from{opacity:0;transform:translateY(8px) scale(.92)}to{opacity:1;transform:none}}
+.abtn.timer{background:rgba(30,20,55,.92);border:1px solid rgba(255,158,205,.5);color:#ffd9ec;font-weight:800;min-width:56px;text-align:center}
+.abtn.timer.urgent{border-color:#ff6b6b;color:#ffd2d2;animation:ttPulse .8s infinite}
+@keyframes ttPulse{50%{opacity:.5}}
+#specBadge{position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:14;padding:4px 13px;border-radius:13px;background:rgba(40,30,70,.92);border:1px solid rgba(120,200,255,.55);color:#dbeeff;font-size:.75rem;font-weight:800;box-shadow:0 2px 10px rgba(0,0,0,.45);pointer-events:none}
 
 /* ── Chow picker / confirm box ──────────────────────────────────────────── */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:400}
@@ -319,6 +323,7 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
     <div id="nameErr" class="err"></div>
     <button onclick="submitName()">Continue →</button>
     <button class="sec" onclick="showTutorial()" style="margin-top:-4px">❓ How to Play</button>
+    <div id="homeStats" style="text-align:center;opacity:.5;font-size:.74rem;margin-top:8px"></div>
   </div>
 </div>
 
@@ -396,11 +401,13 @@ button.danger{background:rgba(231,76,60,.18);color:#e74c3c;border:1px solid rgba
     <div id="phaserMount"></div>
     <div class="corner-btns">
       <button class="scores-btn" id="scoresBtn" onclick="showScores()" title="Scoreboard">📊<span class="btn-label"> Scores</span></button>
+      <button class="rules-btn" id="rulesBtn" onclick="showRules()" title="Rules &amp; fan table">📖<span class="btn-label"> Rules</span></button>
       <button class="help-btn" id="helpBtn" onclick="requestHelp()" title="Show a hint for this turn" style="display:none">💡<span class="btn-label"> Help</span></button>
       <button class="emote-btn" id="emoteBtn" onclick="toggleEmotes()" title="Send a reaction">😄<span class="btn-label"> React</span></button>
       <button class="leave-btn" id="leaveBtn" onclick="confirmLeave()" title="Leave game">🚪<span class="btn-label"> Leave</span></button>
     </div>
     <div id="emoteBar"></div>
+    <div id="specBadge" style="display:none">👁 Spectating</div>
     <div id="actionOverlay"></div>
   </div>
   <div class="chat-panel" id="chatPanel">
