@@ -1,6 +1,6 @@
 'use strict';
 // ─── State ────────────────────────────────────────────────────────────────────
-let ws, myId, myName = '', roomId = null, isHost = false;
+let ws, myId, myName = '', roomId = null, isHost = false, myResumeToken = null;
 let G = null, prevG = null, selTile = null;
 let lastDrawnTileId = null, prevHandIds = new Set();
 let unreadCount = 0, chatOpen = true, pendingWindBanner = null;
@@ -706,7 +706,7 @@ function connect() {
     if (saved) { try {
       const s=JSON.parse(saved);
       pendingSess = s;
-      if (s.playerId && s.roomId) { tx({type:'resume', playerId:s.playerId, roomId:s.roomId}); return; }
+      if (s.playerId && s.roomId) { tx({type:'resume', playerId:s.playerId, roomId:s.roomId, resumeToken:s.resumeToken}); return; }
       if (s.name) tx({type:'setName',name:s.name});
       if (s.roomId) setTimeout(()=>tx({type:'joinRoom',roomId:s.roomId}),300);
     } catch{} }
@@ -717,11 +717,11 @@ function connect() {
 }
 let pendingSess = null;
 function tx(msg) { if (ws && ws.readyState===1) ws.send(JSON.stringify(msg)); }
-function saveSession() { sessionStorage.setItem('mjSession', JSON.stringify({name:myName, roomId, playerId:myId, isHost})); }
+function saveSession() { sessionStorage.setItem('mjSession', JSON.stringify({name:myName, roomId, playerId:myId, isHost, resumeToken:myResumeToken})); }
 
 function onMsg(m) {
   switch(m.type) {
-    case 'welcome': myId = m.playerId; break;
+    case 'welcome': myId = m.playerId; if (m.resumeToken) myResumeToken = m.resumeToken; break;
 
     // Live-voice signaling (WS/Workers mode)
     case 'voiceRoster': voiceApplyRosterWS(m.members); break;

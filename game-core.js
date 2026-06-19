@@ -1048,14 +1048,18 @@ function handleMsg(ws, player, msg) {
       || [...rooms.values()].find(r => r.players.some(p => p.id === msg.playerId));
     const entry = room?.players.find(p => p.id === msg.playerId);
     if (!room || !entry) { send(ws, { type: 'resumeFailed' }); return; }
+    // Require the secret seat token so only the original owner can reclaim it
+    // (playerId alone is public — it's broadcast to every player in the room).
+    if (!msg.resumeToken || msg.resumeToken !== entry.resumeToken) { send(ws, { type: 'resumeFailed' }); return; }
     // Take over the seat (close any stale socket still attached to it)
     if (entry.ws && entry.ws !== ws) { try { entry.ws.close(); } catch {} wsToPlayer.delete(entry.ws); }
     player.id = entry.id;
     player.name = entry.name;
     player.roomId = room.id;
+    player.resumeToken = entry.resumeToken; // keep the same token for future resumes
     room.players[room.players.indexOf(entry)] = player;
     clearTimeout(room._cleanup);
-    send(ws, { type: 'welcome', playerId: player.id });
+    send(ws, { type: 'welcome', playerId: player.id, resumeToken: player.resumeToken });
     send(ws, { type: 'resumed', roomId: room.id });
     send(ws, { type: 'nameSet', name: player.name });
     if (room.game) {
@@ -1270,9 +1274,13 @@ export { computeFan, MIN_FAN };
 // ─── Transport entry points (shared by Node server and Cloudflare Worker) ────
 export function attachPlayer(ws) {
   const pid = crypto.randomUUID();
-  const player = { id: pid, ws, name: 'Player', roomId: null };
+  // Secret token for reclaiming this seat. Unlike playerId (which is broadcast
+  // to every other player), this is sent ONLY to this socket, so a co-player
+  // can't hijack the seat via `resume`.
+  const resumeToken = crypto.randomUUID();
+  const player = { id: pid, ws, name: 'Player', roomId: null, resumeToken };
   wsToPlayer.set(ws, player);
-  send(ws, { type: 'welcome', playerId: pid });
+  send(ws, { type: 'welcome', playerId: pid, resumeToken });
   return player;
 }
 
