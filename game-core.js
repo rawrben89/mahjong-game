@@ -573,8 +573,11 @@ function sendState(room) {
 // A human who goes AFK (or drops mid-turn) would otherwise freeze the whole
 // table, since claim/turn phases wait on their input. Auto-resolve after a
 // timeout: pass owed claims, and auto-draw + discard on an idle human's turn.
-const TURN_MS = 60000;   // a human's own draw/discard turn
-const CLAIM_MS = 15000;  // deciding whether to claim someone's discard
+// Idle timeouts (ms). Overridable via env for fast tests; the `typeof process`
+// guard keeps this safe in the Cloudflare Workers runtime (no `process` there).
+const _env = (typeof process !== 'undefined' && process.env) ? process.env : {};
+const TURN_MS = +_env.MJ_TURN_MS || 60000;   // a human's own draw/discard turn
+const CLAIM_MS = +_env.MJ_CLAIM_MS || 15000; // deciding whether to claim someone's discard
 function clearAfk(room) { if (room._afk) { clearTimeout(room._afk); room._afk = null; } }
 function armTurnTimer(room) {
   const g = room.game;

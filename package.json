@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "test": "node tests/test_fan.mjs",
+    "test:afk": "MJ_TURN_MS=600 MJ_CLAIM_MS=400 node tests/test_afk.mjs",
     "deploy": "wrangler deploy"
   },
   "engines": {
